@@ -1,0 +1,5 @@
+/.eunit
+/doc
+*.bak
+*.bak~
+*.swp
