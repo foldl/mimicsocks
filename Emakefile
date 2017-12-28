@@ -1,1 +1,1 @@
-{"./src/*", [{outdir, "./ebin"}]}.
+{"./src/*", [{i, "./include"}, {outdir, "./ebin"}]}.

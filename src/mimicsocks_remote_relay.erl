@@ -4,7 +4,7 @@
 
 -export([start_link/1, stop/1, recv/2]).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 -record(state,
     {

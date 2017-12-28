@@ -7,7 +7,11 @@
 -export([init/1]).
 
 start_link() ->
-    start_link(mimicsocks, fun filter_all_true/1).
+    Config = case application:get_env(mimicsocks, config) of
+        {ok, X} when  is_atom(X) -> X;
+        _ -> mimicsocks
+    end,
+    start_link(Config, fun filter_all_true/1).
 
 start_link(skip_localhost) ->
     start_link(mimicsocks, fun filter_localhost/1);
@@ -15,9 +19,19 @@ start_link(Config) -> start_link(Config, fun filter_all_true/1).
 
 start_link(Config, skip_localhost) -> start_link(Config, fun filter_localhost/1);
 start_link(Config, IpFilter) when is_function(IpFilter) ->
-    LogFile = filename:join(code:priv_dir(mimicsocks), "log"),
     mimicsocks_cfg:start_link(Config),
-    error_logger:logfile({open, LogFile}),
+    Set = sets:from_list(
+        case application:get_env(mimicsocks, log) of
+            {ok, L} when  is_list(L) -> L;
+            _ -> []
+        end),
+    case sets:is_element(file, Set) of
+        true ->
+            LogFile = filename:join(code:priv_dir(mimicsocks), "log"),
+            error_logger:logfile({open, LogFile});
+        _ -> ok
+    end,
+    error_logger:tty(sets:is_element(tty, Set)),
     supervisor:start_link({local, ?MODULE}, ?MODULE, [IpFilter]).
 
 init([IpFilter]) ->
@@ -26,7 +40,7 @@ init([IpFilter]) ->
 
     ChildLocal = [create_local_child(LocalAddresses, X) || X <- Servers],
     ChildRemote = [create_remote_child(LocalAddresses, X) || X <- Servers],
-    Children = lists:flatten(ChildLocal ++ ChildRemote),
+    Children = lists:flatten(ChildRemote ++ ChildLocal),
 
     SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
     ChildSpecs = lists:zipwith(
@@ -50,12 +64,29 @@ create_local_child(LocalAddresses, Server) ->
     LocalArgs = [RemoteIp, RemotePort, OtherPorts, Key],
     case sets:is_element(Ip, LocalAddresses) of
         true -> 
-            LocalServerArgs = [Ip, Port, mimicsocks_local, LocalArgs],
-            #{
-                start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
-                restart => permanent,
-                shutdown => brutal_kill
-            };
+            case mimicsocks_cfg:get_value(Server, wormhole) of
+                aggregated ->
+                    LocalServerArgs = [Ip, Port, mimicsocks_local_agg],
+                    [
+                        #{
+                            start => {mimicsocks_local_agg, start_link, [LocalArgs]},
+                            restart => permanent,
+                            shutdown => brutal_kill
+                        },
+                        #{
+                            start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
+                            restart => permanent,
+                            shutdown => brutal_kill
+                        }
+                    ];
+                _ ->
+                    LocalServerArgs = [Ip, Port, mimicsocks_local, LocalArgs],
+                    #{
+                        start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
+                        restart => permanent,
+                        shutdown => brutal_kill
+                    }
+            end;
         _ -> []
     end.
 
@@ -73,11 +104,16 @@ create_remote_child(LocalAddresses, Server) ->
     end,
 
     ExtraPorts = mimicsocks_cfg:get_value(Server, remote_extra_ports),
+
+    Mod = case mimicsocks_cfg:get_value(Server, wormhole) of
+                aggregated -> mimicsocks_remote_agg;
+                _ -> mimicsocks_remote
+    end,
         
     case sets:is_element(RemoteIp, LocalAddresses) of
         true -> 
             RemoteArgs = [Key, Handler, HandlerArgs],
-            RemoteServerArgs = [RemoteIp, RemotePort, mimicsocks_remote, RemoteArgs],
+            RemoteServerArgs = [RemoteIp, RemotePort, Mod, RemoteArgs],
             RemoteMain = #{
                 start => {mimicsocks_tcp_listener, start_link, [RemoteServerArgs]},
                 restart => permanent,

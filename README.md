@@ -43,26 +43,36 @@ a data handler. Mimicsocks has two handlers:
 
 ## Internals
 
-In end of this wormhole (a.k.a mimicsocks), there is a list of nodes. Each node receives
-data in message format `{recv, From, Data}`, and pass the processed data to the next
-node by sending `{recv, From, NewData}` to it. Generally, if there is a node A in one
-end, there will be a node A<sup>-1</sup> in the other end to cancel out A's effects.
+In each end of this wormhole (a.k.a mimicsocks), there is a list of nodes.
+Each node receives data in message format `{recv, From, Data}`, and pass
+the processed data to the next node by sending `{recv, From, NewData}` to it.
+Generally, if there is a node A in one end,
+there will be a node A<sup>-1</sup> in the other end to cancel out A's effects.
+
+There are two types of wormhole, aggregated and distributed.
+For a wormhole in distributed mode, when a new socket (call it local socket)
+is established on the local end, another socket (call it remote socket) between
+local & remote ends is also created.
+For a wormhole in aggregated mode, there is only one socket between local & remote ends,
+and all traffic are aggregated into this single socket.
 
 Mimicsocks has following nodes.
 
-1. 256bit AES encryption/decryption
+1. AES encryption/decryption
 
 1. inband transceiving
 
     To support handover, mimicsocks uses these nodes for inband communication between
     local & remote ends.
 
-    Typically, when a new socket (call it local socket) is established on the local
-    end, another socket (call it remote socket) between local & remote ends is also
-    created. Handover means during the lifetime of local socket, new socket are
+    For a wormhole in distributed mode, handover means during the lifetime of local socket, new socket are
     dynamically created to take over the job from elder remote socket. In a tiny time
     frame in traffic from local to remote and traffic from remote to local occur in
     two separate sockets, so yes, it is baton handover.
+
+    For a wormhole in aggregated mode, handover means during the lifetime of this single socket,
+    a new socket is dynamically created to take over the job from elder one, and then
+    the elder one is closed.
 
 1. mimic
 
@@ -70,8 +80,8 @@ Mimicsocks has following nodes.
     then manipluates packages size and delay to make them follow a randomly-choosen
     distribution.
 
-    Package size may follow one of these distributions: uniform and Gaussian. Package
-    delay may follow one of these distributions: uniform, Gaussian and exponential.
+    Package size may follow one of these distributions: constant, uniform or Gaussian.
+    Package delay may follow one of these distributions: constant, uniform, Gaussian or exponential.
 
     This node does not need a A<sup>-1</sup> in the other end.
 
@@ -79,7 +89,7 @@ Mimicsocks has following nodes.
 
 Take Windows as an example.
 
-1. Install Erlang/OTP 20.0 or newer.
+1. Install Erlang/OTP 20.0 or newer (seriously).
 
     Suppose it's installed in `C:\Program files\erl9.0`
 
@@ -105,13 +115,14 @@ Take Windows as an example.
     {default, [   % name of this wormhole
                 {local, {{127,0,0,1}, 8888}},   % local end address
                 {remote, {{127,0,0,1}, 9999}},  % remote end address
+                {wormhole, aggregated},         % can be aggregated or distributed
                 {remote_handler, socks5},
                 {remote_extra_ports, [9998]},   % extra ports on remote end for handover
                 {key, <<41,186,113,221,126,106,146,106,246,112,85,183,56,79,159,
-                        111,44,174,51,120, 240,217,55,13,205,149,176,82,120,6,61,131>>} 
-                        % 256bit AES key
-                        % use io:format("~p~n",[crypto:strong_rand_bytes(32)]). to generate
-                        % a new key
+                        111,44,174,51,120, 240,217,55,13,205,149,176,82,120,6,61,131>>}
+                        % possible key length: 128, 192, or 256 bits
+                        % use following code to generate a new key: 
+                        % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
             ]
     }.
     ```
@@ -144,12 +155,12 @@ Take Windows as an example.
 
     On local machine:
     ```erlang
-    mimicsocks_sup:start_link().
+    application:ensure_all_started(mimicsocks).
     ```
 
     On remote machine:
     ```erlang
-    mimicsocks_sup:start_link(skip_localhost).
+    application:ensure_all_started(mimicsocks).
     ```
 
 ----

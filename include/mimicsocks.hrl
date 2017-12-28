@@ -60,7 +60,24 @@
 %           close rsock, HO completed.
 %
 
-%% definition for socksv5
+%% defintions for aggregated transmission
+%doc NOP command
+%    <<NOP, Reserved:16/big, LEN:8/big, dummy:LEN>>
+-define(AGG_CMD_NOP, 0).
+%doc New socket
+%   <<NEW_SOCKET, ID:16/big>>
+-define(AGG_CMD_NEW_SOCKET, 1).
+%doc Close socket
+%   <<CLOSE_SOCKET, ID:16/big>>
+-define(AGG_CMD_CLOSE_SOCKET, 2).
+%doc DATA
+%   <<DATA, ID:16/big, Len:16/big, data:Len/binary>>
+-define(AGG_CMD_DATA, 3).
+%doc small DATA 
+%   <<DATA, ID:16/big, Len:8, data:Len/binary>>
+-define(AGG_CMD_SMALL_DATA, 4).
+
+%% definitions for socksv5
 %% https://tools.ietf.org/html/rfc1928
 -define(SOCKS5_VER, 16#05).
 

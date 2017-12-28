@@ -3,7 +3,7 @@
 %@author    foldl@outlook.com
 -module(mimicsocks_local).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 -behaviour(gen_statem).
 
@@ -14,7 +14,8 @@
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
 % utils
--export([report_disconn/2, show_sock/1, choice/1]).
+-export([report_disconn/2, show_sock/1, create_ho_timer/1, parse_cmds/2]).
+-import(mimicsocks_mimic, [choice/1]).
 
 % FSM States
 -export([
@@ -76,10 +77,7 @@ init([ServerAddr, ServerPort, OtherPorts, Key]) ->
     mimicsocks_inband_recv:set_key(RecvSink, Key),
     Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, Cipher]),
     
-    {ok, SendSink} = mimicsocks_mimic:start_link([self(), 
-                                            choice([identity, uniform, gaussian]),
-                                            choice([identity, uniform, gaussian, poission]),
-                                            iir]),
+    {ok, SendSink} = mimicsocks_mimic:start_link([self()]),
     SendEncrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, Cipher]),
     Send = mimicsocks_inband_send:start_link([SendEncrypt, self()]),
     mimicsocks_inband_send:set_key(Send, Key),
@@ -157,8 +155,10 @@ ho_sending_complete(info, {tcp, Socket, Bin}, #state{rsock2 = Socket, recv = Rec
     {keep_state, StateData};
 ho_sending_complete(info, Msg, Data) -> handle_info(Msg, ho_sending_complete, Data).
 
-ho_wait_close(info, {tcp_closed, Socket}, #state{rsock2 = Socket, other_ports = OtherPorts} = StateData) ->
+ho_wait_close(info, {tcp_closed, Socket}, #state{rsock2 = Socket, other_ports = OtherPorts,
+                                                 send_sink = SendSink} = StateData) ->
     ?INFO("ho complete", []),
+    mimicsocks_mimic:change(SendSink),
     {ok, HOTimer} = create_ho_timer(OtherPorts),
     {next_state, forward, StateData#state{rsock2 = undefined, ho_timer = HOTimer}};
 ho_wait_close(info, {recv, SendSink, Bin}, #state{rsock2 = Socket, send_sink = SendSink} = StateData) ->
@@ -229,13 +229,13 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 create_ho_timer(Ports) ->
     case length(Ports) > 0 of
         true -> timer:send_after(5 * 1000, ho_timer);
-        _ -> undefined
+        _ -> {ok, undefined}
     end.
 -else.
 create_ho_timer(Ports) ->
     case length(Ports) > 0 of
         true -> timer:send_after((rand:uniform(300) + 30) * 1000, ho_timer);
-        _ -> undefined
+        _ -> {ok, undefined}
     end.
 -endif.
 
@@ -258,7 +258,3 @@ parse_cmds(<<?MIMICSOCKS_INBAND_HO_R2L, Rem/binary>> = _Cmds, Pid) ->
 parse_cmds(<<?MIMICSOCKS_INBAND_HO_COMPLETE_R2L, Rem/binary>> = _Cmds, Pid) ->
     Pid ! {inband, ho_complete},
     parse_cmds(Rem, Pid).
-
-choice(L) ->
-    Len = length(L),
-    lists:nth(rand:uniform(Len), L).

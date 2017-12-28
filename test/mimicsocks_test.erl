@@ -3,7 +3,7 @@
 -module(mimicsocks_test).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 -compile([export_all]).
 

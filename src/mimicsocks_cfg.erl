@@ -2,7 +2,7 @@
 %@author foldl@outlook.com
 -module(mimicsocks_cfg).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 -behaviour(gen_server).
 

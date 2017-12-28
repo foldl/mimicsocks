@@ -5,7 +5,7 @@
 -export([start_link/1, stop/1, recv/2, set_key/2, tapping/2]).
 -export([subtract/2]).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 -record(state, {
     output,

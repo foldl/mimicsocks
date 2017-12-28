@@ -5,18 +5,21 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, stop/1, recv/2, flush/1]).
+-export([start_link/1, stop/1, recv/2, flush/1, change/1, change/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+%helpers
+-export([choice/1]).
+
+-include("mimicsocks.hrl").
 
 -define(EPSILON, 1/1000000.0).
 
 -record(state, 
     {
         output,
-        size_dist,      % identity, uniform, gaussian
-        delay_dist,     % identity, uniform, gaussian, poission
+        size_dist,      % identity, constant, uniform, gaussian
+        delay_dist,     % identity, constant, uniform, gaussian, poission
         queue = queue:new(),
         total,
         create_t,
@@ -47,9 +50,16 @@ recv(Pid, Data) when is_binary(Data) ->
 recv(Pid, Data) when is_list(Data) ->
     [recv(Pid, X) || X <- Data].
 
+change(Pid) -> 
+    change(Pid, {rand_size_model(), rand_delay_model()}).
+
+change(Pid, {SizeModel, DelayModel}) ->
+    Pid ! {change, SizeModel, DelayModel}.
+
 %% callback funcitons
+init([Output]) ->
+    init([Output, rand_size_model(), rand_delay_model(), iir]);
 init([Output, SizeModel, DelayModel, Estimator]) ->
-    rand:seed(exrop),
     T = cur_tick(),
     {ok, #state{
         output = Output,
@@ -76,6 +86,8 @@ handle_info({flush, Ref, _From}, #state{output = Output} = State) ->
     R = handle_info0(flush, State),
     Output ! {flush, Ref, self()},
     R;
+handle_info({change, SizeModel, DelayModel}, State) ->
+    {noreply, State#state{size_dist = SizeModel, delay_dist = DelayModel}};
 handle_info(stop, State) -> 
     {stop, normal, State};
 handle_info(Info, State) ->
@@ -153,9 +165,14 @@ schedule_send(Size, #state{output = Output, queue = Q, total = Total} = State) -
 schedule_delay(#state{delay_dist = identity} = _State) ->
     0;
 schedule_delay(#state{last_send_t = LastT, 
-                delay_esti = DelayEsti, delay_dist = uniform} = _State) ->
+                delay_esti = DelayEsti, delay_dist = constant} = _State) ->
     {Mean, _Var} = esti_get(DelayEsti),
     Mean + LastT - cur_tick();
+schedule_delay(#state{last_send_t = LastT, 
+                delay_esti = DelayEsti, delay_dist = uniform} = _State) ->
+    {Mean, Var} = esti_get(DelayEsti),
+    X = math:sqrt(12 * Var),
+    Mean + rand:uniform() * X + LastT - cur_tick();
 schedule_delay(#state{last_send_t = LastT, 
                 delay_esti = DelayEsti, delay_dist = gaussian} = _State) ->
     {Mean, Var} = esti_get(DelayEsti),
@@ -173,9 +190,13 @@ schedule_delay(#state{last_send_t = LastT,
 
 schedule_size(#state{size_dist = identity, queue = Q} = _State) ->
     size(queue:head(Q));
-schedule_size(#state{size_dist = uniform, size_esti = SizeEsti} = _State) ->
+schedule_size(#state{size_dist = constant, size_esti = SizeEsti} = _State) ->
     {Mean, _Var} = esti_get(SizeEsti),
     Mean;
+schedule_size(#state{size_dist = uniform, size_esti = SizeEsti} = _State) ->
+    {Mean, Var} = esti_get(SizeEsti),
+    X = math:sqrt(12 * Var),
+    Mean + rand:uniform() * X;
 schedule_size(#state{size_dist = gaussian, size_esti = SizeEsti} = _State) ->
     {Mean, Var} = esti_get(SizeEsti),
     rand:normal(Mean, Var).
@@ -268,3 +289,9 @@ iir_run(X, #iir_state{mean = Mean, var = Var} = _State) ->
 iir_get(#iir_state{mean = Mean, var = Var} = _State) ->
     {Mean, Var}.
     
+choice(L) ->
+    Len = length(L),
+    lists:nth(rand:uniform(Len), L).
+
+rand_size_model() -> choice([identity, constant, uniform, gaussian]).
+rand_delay_model() -> choice([identity, constant, uniform, gaussian, poission]).

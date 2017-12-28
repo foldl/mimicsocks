@@ -5,7 +5,8 @@
 -export([start_link/1, stop/1, recv/2, set_key/2, 
          recv_cmd/2, recv_cmd/3, get_buff/1, continue/1]).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
+
 -import(mimicsocks_inband_recv, [subtract/2]).
 
 -record(state, {

@@ -3,7 +3,7 @@
 %@author foldl@outlook.com
 -module(mimicsocks_remote_socks).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 -behaviour(gen_statem).
 

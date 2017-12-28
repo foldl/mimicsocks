@@ -4,7 +4,7 @@
 
 -export([start_link/1, socket_ready/2]).
 
--include_lib("mimicsocks/include/mimicsocks.hrl").
+-include("mimicsocks.hrl").
 
 start_link([]) ->
     {ok, spawn_link(fun f/0)}.

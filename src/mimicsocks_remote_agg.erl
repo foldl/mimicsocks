@@ -2,7 +2,7 @@
 %     
 %     tcp traffic is either forwarded to a socks5 handler or relayed to another mimicsocks proxy
 %@author    foldl@outlook.com
--module(mimicsocks_remote).
+-module(mimicsocks_remote_agg).
 
 -include("mimicsocks.hrl").
 
@@ -15,6 +15,7 @@
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
 -import(mimicsocks_local, [show_sock/1, report_disconn/2]).
+-import(mimicsocks_local_agg, [parse_full/2, send_data/3]).
 
 % FSM States
 -export([
@@ -41,11 +42,14 @@
             ho_id,
             id_cipher,
 
-            handler,
             handler_mod,
+            handler_args,
 
             cmd_ref,
-            buff = <<>>
+            buff = <<>>,
+            t_p2i,
+            t_i2p,
+            d_buf = <<>>
         }
        ).
 
@@ -69,9 +73,8 @@ socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 init([Key, HandlerMod, HandlerArgs]) ->
-    {ok, Handler} = HandlerMod:start_link([self() | HandlerArgs]),
     {ok, init, #state{handler_mod = HandlerMod,
-                      handler = Handler,
+                      handler_args = HandlerArgs,
                       key = Key}}.
 
 callback_mode() ->
@@ -108,7 +111,9 @@ wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
                       recv_inband = RecvSink,
                       send_inband = Send,
                       ho_id = HOID,
-                      id_cipher = IdCipher
+                      id_cipher = IdCipher,
+                      t_i2p = ets:new(tablei2p, []),
+                      t_p2i = ets:new(tablep2i, [])
                       }};
         _ ->
             {next_state, wait_ivec, State#state{buff = All}}
@@ -160,14 +165,22 @@ handle_info({ho_socket, Socket}, _StateName, #state{send_inband = SendInband, re
 handle_info({inband_cmd, Pid, Cmds}, _StateName, #state{recv_sink = Pid} = State) ->
     parse_cmds(Cmds, self()),
     {keep_state, State};
-handle_info({recv, RecvSink, Data}, _StateName, #state{handler = Handler, recv_sink = RecvSink} = State) ->
-    Handler ! {recv, self(), Data},
-    {keep_state, State}; 
+handle_info({recv, RecvSink, Bin}, _StateName, #state{recv_sink = RecvSink,
+                                                       d_buf = Buf} = State) ->
+    All = <<Buf/binary, Bin/binary>>,
+    {ok, Frames, Rem} = parse_full(All, []),
+    State10 = lists:foldl(fun handle_cmd/2, State, Frames),
+    NewState = State10#state{d_buf = Rem},
+    {keep_state, NewState}; 
 handle_info({recv, SendSink, Data}, _StateName, #state{rsock = Socket, send_sink = SendSink} = State) ->
     gen_tcp:send(Socket, Data),
     {keep_state, State}; 
-handle_info({recv, Handler, Data}, _StateName, #state{handler = Handler, send = Send} = State) ->
-    Send ! {recv, self(), Data},
+handle_info({recv, Handler, Data}, _StateName, #state{send = Send, t_p2i = Tp2i} = State) ->
+    case ets:lookup(Tp2i, Handler) of
+        [{Handler, ID}] -> 
+            send_data(Send, ID, Data);
+        _ -> ok
+    end,
     {keep_state, State}; 
 handle_info({tcp, Socket, Bin}, _StateName, #state{rsock = Socket, recv = Recv} = State) ->
     Recv ! {recv, self(), Bin},
@@ -185,13 +198,16 @@ handle_info(Info, StateName, State) ->
 terminate(_Reason, _StateName, #state{rsock=RSocket,
                                       recv = Recv,
                                       send = Send,
-                                      handler = Handler,
                                       handler_mod = Mod,
-                                      ho_id = Id}) ->
+                                      ho_id = Id,
+                                      t_i2p = Ti2p,
+                                      t_p2i = Tp2i}) ->
     (catch gen_tcp:close(RSocket)),
     (catch Recv ! stop),
     (catch Send ! stop), 
-    (catch Mod:stop(Handler)),
+    ets:foldl(fun (Pid, _) -> (catch Mod:stop(Pid)) end, 0, Ti2p),
+    ets:delete(Ti2p),
+    ets:delete(Tp2i),
     mimicsocks_cfg:deregister_remote(Id),
     ok.
 
@@ -208,3 +224,36 @@ parse_cmds(<<?MIMICSOCKS_INBAND_HO_L2R, Port:16/big, Rem/binary>> = _Cmds, Pid) 
 parse_cmds(<<?MIMICSOCKS_INBAND_HO_COMPLETE_L2R, Rem/binary>> = _Cmds, Pid) ->
     Pid ! {inband, ho_complete},
     parse_cmds(Rem, Pid).
+
+handle_cmd(?AGG_CMD_NOP, State) -> State;
+handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
+                                             handler_mod = Module,
+                                             handler_args = Args} = State) ->
+    case ets:lookup(Ti2p, Id) of
+        [{Id, Pid}] ->
+            ?ERROR("?AGG_CMD_NEW_SOCKET id already exsits, stop it", []),
+            Module:stop(Pid);
+        _ -> ok
+    end,
+    {ok, NewPid} = Module:start_link([self() | Args]),
+    ets:insert(Ti2p, {Id, NewPid}),
+    ets:insert(Tp2i, {NewPid, Id}),
+    State;
+handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
+                                               handler_mod = Mod} = State) ->
+    case ets:lookup(Ti2p, Id) of
+        [{ID, Pid}] -> 
+            ets:match_delete(Tp2i, {Pid, '_'}),
+            ets:match_delete(Ti2p, {ID, '_'}),
+            (catch Mod:stop(Pid));
+        _ -> ok
+    end,
+    State;
+handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2p = Ti2p} = State) ->
+    case ets:lookup(Ti2p, Id) of
+        [{Id, Pid}] -> 
+            Pid ! {recv, self(), Data};
+        _ -> 
+            ?WARNING("invalid port id: ~p", [Id])
+    end,
+    State.
