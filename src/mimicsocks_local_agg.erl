@@ -308,11 +308,12 @@ handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_s2i = Ts2i, t_i2s = Ti2s} = Sta
         _ -> ok
     end,
     State;
-handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s} = State) ->
+handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s, send = Send} = State) ->
     case ets:lookup(Ti2s, Id) of
         [{Id, Socket}] -> 
             gen_tcp:send(Socket, Data);
         _ -> 
+            Send ! {recv, self(), <<?AGG_CMD_CLOSE_SOCKET, Id:16/big>>},
             ?WARNING("invalid port id: ~p", [Id])
     end,
     State.

@@ -68,7 +68,7 @@ wait_auth(cast, {local, Bin}, State) ->
             ?ERROR("socks5_auth with error: ~p\n", [Error]),
             {stop, Error, State}
     end;
-wait_auth(cast, timeout, State) ->
+wait_auth(timeout, _, State) ->
     ?ERROR("Client connection timeout: wait_req\n", []),
     {stop, normal, State};
 wait_auth(info, Msg, StateData) -> handle_info(Msg, wait_auth, StateData).
@@ -109,7 +109,7 @@ wait_req(cast, {local, Bin}, State) ->
             ?ERROR("wait_req with error: ~p\n", [Error]),
             {stop, Error, State}            
     end;
-wait_req(cast, timeout, State) ->
+wait_req(timeout, _, State) ->
     ?ERROR("Client connection timeout: wait_req\n", []),
     {stop, normal, State};
 wait_req(info, Msg, StateData) -> handle_info(Msg, wait_req, StateData).
