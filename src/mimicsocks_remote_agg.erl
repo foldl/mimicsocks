@@ -228,13 +228,15 @@ parse_cmds(<<?MIMICSOCKS_INBAND_HO_COMPLETE_L2R, Rem/binary>> = _Cmds, Pid) ->
 handle_cmd(?AGG_CMD_NOP, State) -> State;
 handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
                                              handler_mod = Module,
-                                             handler_args = Args} = State) ->
+                                             handler_args = Args,
+                                             send_sink = SendSink} = State) ->
     case ets:lookup(Ti2p, Id) of
         [{Id, Pid}] ->
             ?ERROR("?AGG_CMD_NEW_SOCKET id already exsits, stop it", []),
             Module:stop(Pid);
         _ -> ok
     end,
+    mimicsocks_mimic:suspend(SendSink, 5000),
     {ok, NewPid} = Module:start_link([self() | Args]),
     ets:insert(Ti2p, {Id, NewPid}),
     ets:insert(Tp2i, {NewPid, Id}),
@@ -242,9 +244,9 @@ handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
 handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
                                                handler_mod = Mod} = State) ->
     case ets:lookup(Ti2p, Id) of
-        [{ID, Pid}] -> 
+        [{Id, Pid}] -> 
             ets:match_delete(Tp2i, {Pid, '_'}),
-            ets:match_delete(Ti2p, {ID, '_'}),
+            ets:match_delete(Ti2p, {Id, '_'}),
             (catch Mod:stop(Pid));
         _ -> ok
     end,

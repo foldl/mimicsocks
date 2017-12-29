@@ -5,7 +5,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, stop/1, recv/2, flush/1, change/1, change/2]).
+-export([start_link/1, stop/1, recv/2, flush/1, change/1, change/2, suspend/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %helpers
@@ -26,7 +26,8 @@
         last_recv_t,
         last_send_t,
         size_esti,       % welford or iir
-        delay_esti
+        delay_esti,
+        suspended = false
     }).
 
 %@doc online mean & variance estimator
@@ -36,25 +37,22 @@
         state
     }).
 
-stop(Pid) ->
-   gen_server:call(Pid, stop).
+stop(Pid) -> gen_server:call(Pid, stop).
 
-flush(Pid) ->
-    Pid ! flush.
+flush(Pid) -> Pid ! flush.
 
-start_link(Args) ->
-   gen_server:start_link(?MODULE, Args, []).
+suspend(Pid, MilliSec) -> Pid ! {suspend, MilliSec}.
+
+start_link(Args) -> gen_server:start_link(?MODULE, Args, []).
 
 recv(Pid, Data) when is_binary(Data) -> 
     Pid ! {recv, self(), Data};
 recv(Pid, Data) when is_list(Data) ->
     [recv(Pid, X) || X <- Data].
 
-change(Pid) -> 
-    change(Pid, {rand_size_model(), rand_delay_model()}).
+change(Pid) -> change(Pid, {rand_size_model(), rand_delay_model()}).
 
-change(Pid, {SizeModel, DelayModel}) ->
-    Pid ! {change, SizeModel, DelayModel}.
+change(Pid, {SizeModel, DelayModel}) -> Pid ! {change, SizeModel, DelayModel}.
 
 %% callback funcitons
 init([Output]) ->
@@ -71,7 +69,8 @@ init([Output, SizeModel, DelayModel, Estimator]) ->
         last_recv_t = T,
         last_send_t = T,
         size_esti = esti_init(Estimator),
-        delay_esti = esti_init(Estimator)
+        delay_esti = esti_init(Estimator),
+        suspended = false
     }}.
 
 handle_call(stop, _From, State) ->
@@ -86,17 +85,27 @@ handle_info({flush, Ref, _From}, #state{output = Output} = State) ->
     R = handle_info0(flush, State),
     Output ! {flush, Ref, self()},
     R;
+handle_info(resume, State) ->
+    {noreply, State#state{suspended = false}};
+handle_info({suspend, MilliSec}, State) ->
+    timer:send_after(MilliSec, resume),
+    handle_info0(flush, State#state{suspended = true});
 handle_info({change, SizeModel, DelayModel}, State) ->
     {noreply, State#state{size_dist = SizeModel, delay_dist = DelayModel}};
 handle_info(stop, State) -> 
     {stop, normal, State};
-handle_info(Info, State) ->
+handle_info(Info, #state{suspended = Suspended} = State) ->
     {noreply, NewState} = handle_info0(Info, State),
-    case queue:is_empty(NewState#state.queue) of
-        false -> schedule(NewState);
-        _ -> ok
-    end,
-    {noreply, NewState}.
+    case Suspended of
+        true -> 
+            handle_info0(flush, NewState);
+        _ ->
+            case queue:is_empty(NewState#state.queue) of
+                false -> schedule(NewState);
+                _ -> ok
+            end,
+            {noreply, NewState}
+    end.
 
 handle_info0({recv, _From, Data}, #state{last_recv_t = LastT, delay_esti = DelayEsti,
                                         size_esti = SizeEsti,

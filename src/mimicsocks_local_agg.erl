@@ -82,7 +82,7 @@ init([ServerAddr, ServerPort, OtherPorts, Key]) ->
     mimicsocks_inband_recv:set_key(RecvSink, Key),
     Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, Cipher]),
     
-    {ok, SendSink} = mimicsocks_mimic:start_link([self()]),
+    {ok, SendSink} = mimicsocks_mimic:start_link([self(), identity, identity, iir]),
     SendEncrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, Cipher]),
     Send = mimicsocks_inband_send:start_link([SendEncrypt, self()]),
     mimicsocks_inband_send:set_key(Send, Key),
@@ -186,12 +186,18 @@ handle_info(ho_timer, _StateName, #state{addr = Addr, recv_inband = RecvInband,
 handle_info({inband_cmd, Pid, Cmds}, _StateName, #state{recv_inband = Pid} = StateData) ->
     parse_cmds(Cmds, self()),
     {keep_state, StateData};
-handle_info({accept, Socket}, _StateName, #state{send = Send, t_i2s = Ti2s, t_s2i = Ts2i} = State) ->
-    ok = inet:setopts(Socket, [{active, true}]),
-    {ok, {_Addr, Port}} = inet:peername(Socket),
-    ets:insert(Ti2s, {Port, Socket}),
-    ets:insert(Ts2i, {Socket, Port}),
-    Send ! {recv, self(), <<?AGG_CMD_NEW_SOCKET, Port:16/big>>},
+handle_info({accept, Socket}, _StateName, #state{send = Send, t_i2s = Ti2s, t_s2i = Ts2i,
+                                                 send_sink = SendSink} = State) ->
+    case {inet:setopts(Socket, [{active, true}]), inet:peername(Socket)} of
+        {ok, {ok, {_Addr, Port}}} ->
+            ets:insert(Ti2s, {Port, Socket}),
+            ets:insert(Ts2i, {Socket, Port}),
+            mimicsocks_mimic:suspend(SendSink, 5000),
+            Send ! {recv, self(), <<?AGG_CMD_NEW_SOCKET, Port:16/big>>};
+        Error -> 
+            ?ERROR("can't get port ~p~n", [Error]),
+            gen_tcp:close(Socket)
+    end,
     {keep_state, State};
 handle_info({tcp, RSocket, Bin}, _StateName, #state{rsock = RSocket, recv = Recv} = State) ->
     Recv ! {recv, self(), Bin},
@@ -312,8 +318,6 @@ handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s, send = Send} = State)
     case ets:lookup(Ti2s, Id) of
         [{Id, Socket}] -> 
             gen_tcp:send(Socket, Data);
-        _ -> 
-            Send ! {recv, self(), <<?AGG_CMD_CLOSE_SOCKET, Id:16/big>>},
-            ?WARNING("invalid port id: ~p", [Id])
+        _ -> ok
     end,
     State.
