@@ -115,7 +115,7 @@ Take Windows as an example.
     {default, [   % name of this wormhole
                 {local, {{127,0,0,1}, 8888}},   % local end address
                 {remote, {{127,0,0,1}, 9999}},  % remote end address
-                {wormhole, aggregated},         % can be aggregated or distributed
+                {wormhole, aggregated},         % can be aggregated (RECOMMENDED) or distributed
                 {remote_handler, socks5},
                 {remote_extra_ports, [9998]},   % extra ports on remote end for handover
                 {key, <<41,186,113,221,126,106,146,106,246,112,85,183,56,79,159,
@@ -153,16 +153,12 @@ Take Windows as an example.
 
 1. Launch mimicsocks:
 
-    On local machine:
-    ```erlang
-    application:ensure_all_started(mimicsocks).
+    On remote & local machine:
+    ```shell
+     erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
     ```
 
-    On remote machine:
-    ```erlang
-    application:ensure_all_started(mimicsocks).
-    ```
-
+    For aggregated ones, remote end should be started ahead of local end.
 ----
 ## License
 

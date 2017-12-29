@@ -7,7 +7,7 @@
     mimicsocks_remote_relay, mimicsocks_remote_socks, mimicsocks_sup, 
     mimicsocks_tcp_listener]},
   {registered, [mimicsocks_cfg]},
-  {applications, [kernel, stdlib, sasl, crypto]},
+  {applications, [kernel, stdlib, crypto]},
   {mod, {mimicsocks_app,[]}},
   {env, [{log, []}]}
  ]}.

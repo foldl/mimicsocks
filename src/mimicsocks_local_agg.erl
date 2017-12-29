@@ -314,7 +314,7 @@ handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_s2i = Ts2i, t_i2s = Ti2s} = Sta
         _ -> ok
     end,
     State;
-handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s, send = Send} = State) ->
+handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s} = State) ->
     case ets:lookup(Ti2s, Id) of
         [{Id, Socket}] -> 
             gen_tcp:send(Socket, Data);
