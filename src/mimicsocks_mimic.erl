@@ -210,23 +210,23 @@ schedule_size(#state{size_dist = gaussian, size_esti = SizeEsti} = _State) ->
     {Mean, Var} = esti_get(SizeEsti),
     rand:normal(Mean, Var).
 
--define(Q_LEN, 5).
+-define(Q_LEN, 4).
 -define(Q_BYTES, 100 * 1024).
 
 schedule(#state{queue = Q, total = Total, create_t = CreateT} = State) ->
     T = cur_tick(),
     case {T - CreateT < 2000, queue:len(Q), Total} of
         {true, _, _} -> self() ! flush;
-        {_, _L, T} when T < 50  -> self() ! flush;
+        {_, _L, T} when T < 100  -> self() ! flush;
         {_, L, _T} when L > ?Q_LEN  -> self() ! {flush, queue:len(Q) - ?Q_LEN};
         {_, _L, T} when T > ?Q_BYTES -> self() ! {flush, 1};
         _ ->
-            Delay = min(schedule_delay(State), 200),
+            Delay = min(schedule_delay(State), 100),
             Size = round(schedule_size(State)),
             case {Delay > 10, Size > 0} of
-                {_, false} -> ok;
+                {_, false} -> self() ! flush;
                 {true, true} -> timer:send_after(Delay, {schedule, Size});
-                {false, true} -> self() ! {schedule, Size}
+                {_, true} -> self() ! {schedule, Size}
             end
     end.
 

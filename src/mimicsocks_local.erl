@@ -234,7 +234,7 @@ create_ho_timer(Ports) ->
 -else.
 create_ho_timer(Ports) ->
     case length(Ports) > 0 of
-        true -> timer:send_after((rand:uniform(300) + 30) * 1000, ho_timer);
+        true -> timer:send_after((rand:uniform(10) + 3) * 60 * 1000, ho_timer);
         _ -> {ok, undefined}
     end.
 -endif.
