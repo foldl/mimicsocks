@@ -67,7 +67,7 @@ wait_req(cast, {local, Bin}, State) ->
                 {ok, RSocket} ->
                     ?INFO("Connected to remote ~p:~p for proxying", [Host, Port]),
                     case Method of 
-                        <<"CONNECT">> -> send_to_local(State#state.local, "HTTP/1.1 200 OK\r\n\r\n");
+                        <<"CONNECT">> -> send_to_local(State#state.local, <<"HTTP/1.1 200 OK\r\n\r\n">>);
                         _ -> gen_tcp:send(RSocket, [RequestLine, "\r\n", Headers])
                     end,
                     {next_state, data, 
