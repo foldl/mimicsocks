@@ -31,7 +31,7 @@ start_link(Config, IpFilter) when is_function(IpFilter) ->
             error_logger:logfile({open, LogFile});
         _ -> ok
     end,
-    error_logger:tty(sets:is_element(tty, Set)),
+    error_logger:tty(true), % sets:is_element(tty, Set)),
     supervisor:start_link({local, ?MODULE}, ?MODULE, [IpFilter]).
 
 init([IpFilter]) ->
@@ -42,7 +42,7 @@ init([IpFilter]) ->
     ChildRemote = [create_remote_child(LocalAddresses, X) || X <- Servers],
     Children = lists:flatten(ChildRemote ++ ChildLocal),
 
-    SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
+    SupFlags = #{strategy => one_for_one, intensity => 5, period => 5},
     ChildSpecs = lists:zipwith(
         fun (Child, Id) -> maps:put(id, Id, Child) end, 
         Children, lists:seq(1, length(Children))),
@@ -66,19 +66,12 @@ create_local_child(LocalAddresses, Server) ->
         true -> 
             case mimicsocks_cfg:get_value(Server, wormhole) of
                 aggregated ->
-                    LocalServerArgs = [Ip, Port, mimicsocks_local_agg],
-                    [
-                        #{
-                            start => {mimicsocks_local_agg, start_link, [LocalArgs]},
-                            restart => permanent,
-                            shutdown => brutal_kill
-                        },
-                        #{
-                            start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
-                            restart => permanent,
-                            shutdown => brutal_kill
-                        }
-                    ];
+                    LocalServerArgs = [Ip, Port, mimicsocks_local_agg, {agg, LocalArgs}],
+                    #{
+                        start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
+                        restart => permanent,
+                        shutdown => brutal_kill
+                    };
                 _ ->
                     LocalServerArgs = [Ip, Port, mimicsocks_local, LocalArgs],
                     #{

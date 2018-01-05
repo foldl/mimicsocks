@@ -7,7 +7,7 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/1, stop/0, accept/1]).
+-export([start_link/1, stop/1, accept/2]).
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
 % FSM States
@@ -26,13 +26,13 @@
 -export([parse_full/2, send_data/3]).
 
 start_link(Args) ->
-   gen_statem:start_link({local, ?MODULE}, ?MODULE, Args, []).
+   gen_statem:start_link(?MODULE, Args, []).
 
-accept(Socket) ->
-    ok = gen_tcp:controlling_process(Socket, whereis(?MODULE)),
-    ?MODULE ! {accept, Socket}.
+accept(Pid, Socket) ->
+    ok = gen_tcp:controlling_process(Socket, Pid),
+    Pid ! {accept, Socket}.
 
-stop() -> gen_statem:stop(?MODULE).
+stop(Pid) -> gen_statem:stop(Pid).
 
 callback_mode() ->
     state_functions.
@@ -91,7 +91,9 @@ init([ServerAddr, ServerPort, OtherPorts, Key]) ->
         {ok, RSocket} ->
             ?INFO("Connected to remote ~p:~p for proxying\n", 
                   [ServerAddr, ServerPort]),
+            Nop = create_nop_frame(),
             gen_tcp:send(RSocket, IVec),
+            Send ! {recv, self(), Nop},
             {ok, HOTimer} = create_ho_timer(OtherPorts),
             {ok, forward, #state{addr = ServerAddr,
                       port = ServerPort,
@@ -210,7 +212,7 @@ handle_info({tcp, Socket, Bin}, _StateName, #state{t_s2i = Ts2i, send = Send} = 
     end,
     {keep_state, State};
 handle_info({tcp_closed, RSocket}, _StateName, #state{rsock = RSocket} = State) ->
-    {stop, normal, State};
+    {stop, remote_down, State};
 handle_info({tcp_closed, Socket}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, send = Send} = State) ->
     case ets:lookup(Ts2i, Socket) of
         [{Socket, ID}] -> 
@@ -321,3 +323,8 @@ handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s} = State) ->
         _ -> ok
     end,
     State.
+
+create_nop_frame() ->
+    Len = rand:uniform(255),
+    Data = list_to_binary(lists:duplicate(Len, 0)),
+    <<?AGG_CMD_NOP, 0:16/big, Len, Data/binary>>.

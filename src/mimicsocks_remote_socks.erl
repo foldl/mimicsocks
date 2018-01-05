@@ -16,6 +16,7 @@
 -define(TIMEOUT, 1000).
 
 -import(mimicsocks_local, [show_sock/1, report_disconn/2]).
+-export([send_to_local/2]).
 
 % FSM States
 -export([
@@ -53,16 +54,15 @@ callback_mode() ->
 
 %%  wait_auth -> wait_req -> data
 wait_auth(cast, {socket_ready, Sock}, State) ->
-    {ok, Bin} = gen_tcp:recv(Sock, 0),
-    ok = inet:setopts(Sock, [{active, once}]),
-    wait_auth(cast, {local, Bin}, State#state{local = Sock});
+    ok = inet:setopts(Sock, [{active, true}]),
+    {keep_state, State#state{local = Sock}};
 wait_auth(cast, {local, Bin}, State) ->
     Buffer = <<(State#state.buff)/binary, Bin/binary>>,
     case decode_socks5_auth(Buffer) of 
         incomplete ->
             {next_state, wait_auth, State#state{buff = Buffer}, ?TIMEOUT};
         {?SOCKS5_VER, _, _, Rest} ->
-            send_to_local(State, <<?SOCKS5_VER, ?SOCKS5_AUTH_NONE>>),
+            send_to_local(State#state.local, <<?SOCKS5_VER, ?SOCKS5_AUTH_NONE>>),
             {next_state, wait_req, State#state{buff = Rest}, ?TIMEOUT};
         Error ->
             ?ERROR("socks5_auth with error: ~p\n", [Error]),
@@ -88,7 +88,7 @@ wait_req(cast, {local, Bin}, State) ->
             end,
 
             %% connect to remote server & send first message
-            case gen_tcp:connect(Addr, Port, [{active, once}, {packet, raw}, binary,
+            case gen_tcp:connect(Addr, Port, [{active, true}, {packet, raw}, binary,
                                               {reuseaddr, true},
                                               {nodelay, true}]) of
                 {ok, RSocket} ->
@@ -96,13 +96,13 @@ wait_req(cast, {local, Bin}, State) ->
                           [Addr, Port]),
                     gen_tcp:send(RSocket, Rest),
                     Socks5Rsp = <<?SOCKS5_VER:8, ?SOCKS5_REP_OK:8, ?SOCKS5_RESERVED_FIELD:8>>,
-                    send_to_local(State, [Socks5Rsp, Target]),
+                    send_to_local(State#state.local, [Socks5Rsp, Target]),
                     {next_state, data, 
                      State#state{buff= <<>>, rsock = RSocket}};
                 {error, Reason} ->
                     ?ERROR("wait_req can't connect to remote: ~p, ~p\n", [{Addr, Port}, Reason]),
                     Socks5Rsp = <<?SOCKS5_VER:8, 1:8, ?SOCKS5_RESERVED_FIELD:8>>,
-                    send_to_local(State, [Socks5Rsp, Target]),
+                    send_to_local(State#state.local, [Socks5Rsp, Target]),
                     {stop, normal, State}
             end;
         Error ->
@@ -118,17 +118,15 @@ data(cast, {local, Bin}, #state{rsock = Socket} = State) ->
     gen_tcp:send(Socket, Bin),
     {next_state, data, State};
 data(cast, {remote, Bin}, State) ->
-    send_to_local(State, Bin),
+    send_to_local(State#state.local, Bin),
     {next_state, data, State};
 data(info, Msg, StateData) -> handle_info(Msg, data, StateData).
 
 handle_info({recv, From, Bin}, StateName, StateData) when is_pid(From) ->
     ?MODULE:StateName(cast, {local, Bin}, StateData);
 handle_info({tcp, Socket, Bin}, StateName, #state{local=Socket} = StateData) ->
-    ok = inet:setopts(Socket, [{active, once}]),
     ?MODULE:StateName(cast, {local, Bin}, StateData);
 handle_info({tcp, Socket, Bin}, StateName, #state{rsock=Socket} = StateData) ->
-    inet:setopts(Socket, [{active, once}]),
     ?MODULE:StateName(cast, {remote, Bin}, StateData);
 handle_info({tcp_closed, Socket}, _StateName, #state{rsock = Socket} = StateData) ->
     report_disconn(Socket, "Remote"),
@@ -148,9 +146,9 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
 % helper functions
-send_to_local(#state{local = Local} = _State, IoData) when is_pid(Local) ->
+send_to_local(Local, IoData) when is_pid(Local) ->
     Local ! {recv, self(), IoData};
-send_to_local(#state{local = LSock} = _State, IoData) when is_port(LSock) ->
+send_to_local(LSock, IoData) when is_port(LSock) ->
     gen_tcp:send(LSock, IoData).
 
 decode_socks5_auth(<<Ver:8/big, _/binary>>) when Ver =/= ?SOCKS5_VER ->
