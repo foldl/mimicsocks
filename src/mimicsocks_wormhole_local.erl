@@ -43,6 +43,7 @@ callback_mode() ->
             addr,       % remote addr & port
             port,
             other_ports = [], % ports for handover
+            extra_args,
 
             send,       % process chain
             send_sink,
@@ -68,7 +69,7 @@ callback_mode() ->
 -define(REMOTE_TCP_OPTS, [{active, true}, {packet, raw}, binary, {reuseaddr, true}, {keepalive, true}]).
 
 %% callback funcitons
-init([UpStream, ServerAddr, ServerPort, OtherPorts, Key]) ->
+init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
     process_flag(trap_exit, true),
     IVec = crypto:strong_rand_bytes(?MIMICSOCKS_HELLO_SIZE),
     Cipher = crypto:stream_init(aes_ctr, Key, IVec),
@@ -83,7 +84,7 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key]) ->
     Send = mimicsocks_inband_send:start_link([SendEncrypt, self()]),
     mimicsocks_inband_send:set_key(Send, Key),
 
-    case gen_tcp:connect(ServerAddr, ServerPort, ?REMOTE_TCP_OPTS) of
+    case connect(ServerAddr, ServerPort, T) of
         {ok, RSocket} ->
             ?INFO("Connected to remote ~p:~p\n", [ServerAddr, ServerPort]),
             gen_tcp:send(RSocket, IVec),
@@ -92,6 +93,7 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key]) ->
                       up_stream = UpStream,
                       addr = ServerAddr,
                       port = ServerPort,
+                      extra_args = T,
                       other_ports = OtherPorts,
                       key = Key,
                       rsock = RSocket,
@@ -164,12 +166,12 @@ ho_wait_close(info, {tcp, Socket, Bin}, #state{rsock2 = Socket, recv = Recv} = S
     {keep_state, StateData};
 ho_wait_close(info, Msg, Data) -> handle_info(Msg, ho_wait_close, Data).
 
-handle_info(ho_timer, _StateName, #state{addr = Addr, other_ports = OtherPorts} = StateData) ->
+handle_info(ho_timer, _StateName, #state{addr = Addr, other_ports = OtherPorts, extra_args = Extra} = StateData) ->
     ?INFO("ho_timer", []),
     Port = choice(OtherPorts),
     Pid = self(),
     spawn(fun () ->
-        case gen_tcp:connect(Addr, Port, ?REMOTE_TCP_OPTS, 3000) of
+        case connect(Addr, Port, Extra) of
             {ok, RSocket} ->
                 gen_tcp:controlling_process(RSocket, Pid),
                 Pid ! {ho_socket, ok, RSocket};
@@ -249,3 +251,56 @@ parse_cmds(<<?MIMICSOCKS_INBAND_HO_R2L, Rem/binary>> = _Cmds, Pid) ->
 parse_cmds(<<?MIMICSOCKS_INBAND_HO_COMPLETE_R2L, Rem/binary>> = _Cmds, Pid) ->
     Pid ! {inband, ho_complete},
     parse_cmds(Rem, Pid).
+
+connect(ServerAddr, ServerPort, [{http_proxy, ProxyAddr, ProxyPort}]) ->
+    case gen_tcp:connect(ProxyAddr, ProxyPort, [{active, false}, {packet, raw}, binary, {reuseaddr, true}, {keepalive, true}]) of
+        {ok, Socket} ->
+            Req = ["CONNECT ", ip_to_list(ServerAddr), ":", integer_to_list(ServerPort), " HTTP/1.1\r\n\r\n"],
+            gen_tcp:send(Socket, Req),
+            case wait_result(Socket) of
+                {ok, <<>>} -> 
+                    inet:setopts(Socket, [{active, true}]),
+                    {ok, Socket};
+                {ok, Remain} -> 
+                    self() ! {tcp, Socket, Remain},
+                    inet:setopts(Socket, [{active, true}]),
+                    {ok, Socket};
+                OtherError ->
+                    io:format("error: ~p~n", [OtherError]), 
+                    gen_tcp:close(Socket),
+                    OtherError
+            end;
+        Result -> Result
+    end;
+connect(ServerAddr, ServerPort, _) ->
+    gen_tcp:connect(ServerAddr, ServerPort, ?REMOTE_TCP_OPTS).
+
+ip_to_list(X) when is_list(X) -> X;
+ip_to_list({A,B,C,D}) -> 
+    io_lib:format("~B.~B.~B.~B",[A,B,C,D]);
+ip_to_list({A,B,C,D,E,F,G,H}) -> 
+    io_lib:format("~.16B.~.16B.~.16B.~.16B.~.16B.~.16B.~.16B.~.16B",[A,B,C,D,E,F,G,H]).
+
+wait_line(_Socket, _Acc, N) when N < 0 -> {error, timeout};
+wait_line(Socket, Acc, N) ->
+    receive
+    after 50 -> ok
+    end,
+    case gen_tcp:recv(Socket, 0) of
+        {ok, Data} -> 
+            All = <<Acc/binary, Data/binary>>,
+            case binary:split(All, <<"\r\n\r\n">>) of
+                [_, Remain] -> {ok, Remain};
+                [_] -> wait_line(Socket, All, N - 1)
+            end;
+        X -> X
+    end.
+
+wait_result(Socket) ->
+    Expected = <<"HTTP/1.1 200">>,
+    case gen_tcp:recv(Socket, size(Expected), 2000) of
+        {ok, Expected} -> wait_line(Socket, <<>>, 40);
+        {ok, <<"HTTP/1.0 200">>} -> wait_line(Socket, <<>>, 40);
+        {ok, Other} -> {error, Other};
+        X -> X
+    end.

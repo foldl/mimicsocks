@@ -61,7 +61,8 @@ create_local_child(LocalAddresses, Server) ->
     {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, remote),
     Key = mimicsocks_cfg:get_value(Server, key),
     OtherPorts = mimicsocks_cfg:get_value(Server, remote_extra_ports),
-    LocalArgs = [RemoteIp, RemotePort, OtherPorts, Key],
+    LocalProxy = mimicsocks_cfg:get_value(Server, local_proxy),
+    LocalArgs = [RemoteIp, RemotePort, OtherPorts, Key, LocalProxy],
     case sets:is_element(Ip, LocalAddresses) of
         true -> 
             case mimicsocks_cfg:get_value(Server, wormhole) of
