@@ -15,7 +15,7 @@
 
 -define(TIMEOUT, 1000).
 
--import(mimicsocks_local, [show_sock/1, report_disconn/2]).
+-import(mimicsocks_wormhole_local, [show_sock/1, report_disconn/2]).
 -export([send_to_local/2]).
 
 % FSM States
@@ -42,6 +42,46 @@ socket_ready(Pid, Sock) when is_port(Sock) ->
 
 stop(Pid) -> gen_statem:stop(Pid).
 
+%% definitions for socksv5
+%% https://tools.ietf.org/html/rfc1928
+-define(SOCKS5_VER, 16#05).
+
+-define(SOCKS5_AUTH_NONE,   16#00).
+-define(SOCKS5_AUTH_GSSAPI, 16#01).
+-define(SOCKS5_AUTH_USER,   16#02).
+-define(SOCKS5_AUTH_ERR,    16#ff).
+
+-define(SOCKS5_REQ_CONNECT,  16#01).
+-define(SOCKS5_REQ_BIND,     16#02).
+-define(SOCKS5_REQ_UDP_ASSOC,16#03).
+
+-define(SOCKS5_ATYP_V4,  16#01).
+-define(SOCKS5_ATYP_DOM, 16#03).
+-define(SOCKS5_ATYP_V6,  16#04).
+
+-define(SOCKS5_REP_OK,   16#00).
+-define(SOCKS5_REP_FAIL, 16#01).
+-define(SOCKS5_REP_NOT_ALLOWED, 16#02).
+-define(SOCKS5_REP_NET_UNREACHABLE, 16#03).
+-define(SOCKS5_REP_HOST_UNREACHABLE, 16#04).
+-define(SOCKS5_REP_REFUSED, 16#05).
+-define(SOCKS5_REP_TTL_EXPIRED, 16#06).
+-define(SOCKS5_REP_CMD_NOT_SUPPORTED, 16#07).
+-define(SOCKS5_REP_ATYP_NOT_SUPPORTED, 16#08).
+
+-define(SOCKS5_RESERVED_FIELD, 16#00).
+
+%% definitions for socksv4
+%% http://ftp.icm.edu.pl/packages/socks/socks4/SOCKS4.protocol
+-define(SOCKS4_VER, 16#04).
+-define(SOCKS4_CMD_CONNECT,  16#01).
+-define(SOCKS4_CMD_BIND,     16#02).
+
+-define(SOCKS4_RES_GRANTED,     90).
+-define(SOCKS4_RES_REJECTED,    91).
+-define(SOCKS4_RES_REJECTED_CONN,    92).
+-define(SOCKS4_RES_REJECTED_USERID,  93).
+
 %%%===================================================================
 %%% gen_fsm callbacks
 %%%===================================================================
@@ -64,6 +104,8 @@ wait_auth(cast, {local, Bin}, State) ->
         {?SOCKS5_VER, _, _, Rest} ->
             send_to_local(State#state.local, <<?SOCKS5_VER, ?SOCKS5_AUTH_NONE>>),
             {next_state, wait_req, State#state{buff = Rest}, ?TIMEOUT};
+        {error, {not_supported_version, ?SOCKS4_VER}} ->
+            do_socks4(Buffer, State);
         Error ->
             ?ERROR("socks5_auth with error: ~p\n", [Error]),
             {stop, Error, State}
@@ -72,6 +114,36 @@ wait_auth(timeout, _, State) ->
     ?ERROR("Client connection timeout: wait_req\n", []),
     {stop, normal, State};
 wait_auth(info, Msg, StateData) -> handle_info(Msg, wait_auth, StateData).
+
+do_socks4(Buffer, State) ->
+    case decode_socks4_req(Buffer) of 
+        incomplete ->
+            {next_state, wait_auth, State#state{buff = Buffer}, ?TIMEOUT};
+        {?SOCKS4_VER, DestAddr, Host, Port, Rest} = Socks4Req ->
+            case gen_tcp:connect(Host, Port, 
+                                             [{active, true}, {packet, raw}, binary,
+                                              {reuseaddr, true},
+                                              {nodelay, true}]) of
+                {ok, RSocket} ->
+                    Addr = case inet:peername(RSocket) of
+                        {ok, {Addr10, Port}} -> Addr10;
+                        _ -> {8,8,8,8}
+                    end,
+                    ?INFO("Connected to remote ~p:~p for proxying", [Addr, Port]),
+                    gen_tcp:send(RSocket, Rest),
+                    BinAddr = list_to_binary(tuple_to_list(Addr)),
+                    Socks4Rsp = <<0, ?SOCKS4_RES_GRANTED, Port:16/big, BinAddr/binary>>,
+                    send_to_local(State#state.local, Socks4Rsp),
+                    {next_state, data, State#state{buff= <<>>, rsock = RSocket}};
+                {error, _Reason} ->
+                    Socks4Rsp = <<0, ?SOCKS4_RES_REJECTED_CONN, Port:16/big, DestAddr/binary>>,
+                    send_to_local(State#state.local, Socks4Rsp),
+                    {stop, normal, State}
+            end;
+        Error ->
+            ?ERROR("socks4 with error: ~p\n", [Error]),
+            {stop, Error, State}
+    end.
 
 wait_req(cast, {local, Bin}, State) ->
     Buffer = <<(State#state.buff)/binary, Bin/binary>>,
@@ -158,6 +230,31 @@ decode_socks5_auth(<<?SOCKS5_VER:8/big, NMethods:8/big,
     {?SOCKS5_VER, NMethods, Methods, Rest};
 decode_socks5_auth(_) ->
     incomplete.
+
+decode_socks4_req(<<>>) -> incomplete;
+decode_socks4_req(<<?SOCKS4_VER, Rem/binary>>) -> decode_socks4_req0(Rem);
+decode_socks4_req(<<Ver, _/binary>>) -> {error, {not_supported_version, Ver}}.
+
+decode_socks4_req0(<<?SOCKS4_CMD_CONNECT, DestPort:16/big, DestAddr:4/binary, Rem/binary>>) -> 
+    case binary:split(Rem, <<0>>) of
+        [_USERID, More] -> 
+            case DestAddr of
+                % socks4a
+                <<0, 0, 0, X>> when X /= 0 ->
+                    % socks4a
+                    case binary:split(More, <<0>>) of
+                        [Host, Rest] ->
+                            {?SOCKS4_VER, DestAddr, binary_to_list(Host), DestPort, Rest};
+                        _ -> incomplete
+                    end;
+                _ ->
+                    {?SOCKS4_VER, DestAddr, list_to_tuple(binary_to_list(DestAddr)), DestPort, More}
+            end;
+        _ -> incomplete
+    end;
+decode_socks4_req0(<<?SOCKS4_CMD_CONNECT, _/binary>>) -> incomplete;
+decode_socks4_req0(<<Cmd, _/binary>>) -> {error, {not_supported_command, Cmd}};
+decode_socks4_req0(<<>>) -> incomplete.
 
 decode_socks5_req(<<>>) -> incomplete;
 decode_socks5_req(<<?SOCKS5_VER, Rem/binary>>) -> decode_socks5_req0(Rem);

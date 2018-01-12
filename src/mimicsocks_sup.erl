@@ -90,6 +90,8 @@ create_remote_child(LocalAddresses, Server) ->
     Key = mimicsocks_cfg:get_value(Server, key),
     {Handler, HandlerArgs} = case mimicsocks_cfg:get_value(Server, remote_handler) of
         socks5 -> {mimicsocks_remote_socks, []};
+        socks4 -> {mimicsocks_remote_socks, []};
+        socks  -> {mimicsocks_remote_socks, []};
         http -> {mimicsocks_remote_http, []};
         {relay, {RelayIp, RelayPort}} ->
             {mimicsocks_remote_relay, [RelayIp, RelayPort]};

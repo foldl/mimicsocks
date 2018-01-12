@@ -27,11 +27,11 @@ Data put into the local end will be transmitted to the remote end
 secretly and magically. Once data arrives at the remote end, it is served by
 a data handler. Mimicsocks has two handlers:
 
-* A simple socks5 proxy
+* A simple socks4/4a/5 proxy
 
     With it, one can use mimicsocks just like Shadowsocks.
 
-    Thanks to the modularity, this handler can be used as a standalone sock5 proxy:
+    Thanks to the modularity, this handler can be used as a standalone socks4/4a/5 proxy:
 
     `mimicsocks_tcp_listener:start_link([Ip, Port, mimicsocks_remote_socks, [undefined]]).`
 
@@ -124,7 +124,7 @@ Take Windows as an example.
                 {local, {{127,0,0,1}, 8888}},   % local end address
                 {remote, {{127,0,0,1}, 9999}},  % remote end address
                 {wormhole, aggregated},         % can be aggregated (RECOMMENDED) or distributed
-                {remote_handler, socks5},       % socks5, http, or relay (see below)
+                {remote_handler, socks},        % socks, http, or relay (see below)
                 {remote_extra_ports, [9998]},   % extra ports on remote end for handover
                 {key, <<41,186,113,221,126,106,146,106,246,112,85,183,56,79,159,
                         111,44,174,51,120, 240,217,55,13,205,149,176,82,120,6,61,131>>}

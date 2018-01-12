@@ -14,7 +14,7 @@
 % callbacks
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
--import(mimicsocks_local, [show_sock/1, report_disconn/2]).
+-import(mimicsocks_wormhole_local, [show_sock/1, report_disconn/2]).
 
 % FSM States
 -export([

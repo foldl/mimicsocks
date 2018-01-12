@@ -15,7 +15,7 @@
 
 -define(TIMEOUT, 1000).
 
--import(mimicsocks_local, [show_sock/1, report_disconn/2]).
+-import(mimicsocks_wormhole_local, [show_sock/1, report_disconn/2]).
 -import(mimicsocks_remote_socks, [send_to_local/2]).
 
 % FSM States
