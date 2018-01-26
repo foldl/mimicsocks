@@ -20,7 +20,8 @@
 % FSM States
 -export([
          init/3,
-         forward/3
+         forward/3,
+         closing/3
         ]).
 
 -record(state,
@@ -69,13 +70,23 @@ init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 forward(info, Msg, StateData) -> handle_info(Msg, forward, StateData).
 
+closing(cast, _, State) -> {keep_state, State};
+closing(info, stop, State) -> {stop, normal, State};
+closing(info, _Msg, State) -> {keep_state, State}.
+
 handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel,
                                                      d_buf = Buf} = State) ->
     All = <<Buf/binary, Bin/binary>>,
-    {ok, Frames, Rem} = parse_full(All, []),
-    State10 = lists:foldl(fun handle_cmd/2, State, Frames),
-    NewState = State10#state{d_buf = Rem},
-    {keep_state, NewState}; 
+    case parse_full(All, []) of
+        {ok, Frames, Rem} ->
+            State10 = lists:foldl(fun handle_cmd/2, State, Frames),
+            NewState = State10#state{d_buf = Rem},
+            {keep_state, NewState};
+        _ -> 
+            ?ERROR("package parse error, closing later", []),
+            timer:send_after((rand:uniform(10) + 10) *  1000, stop),
+            {next_state, closing, State#state{d_buf = <<>>}}
+    end;
 handle_info({recv, Handler, Data}, _StateName, #state{channel = Channel, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of
         [{Handler, ID}] -> 

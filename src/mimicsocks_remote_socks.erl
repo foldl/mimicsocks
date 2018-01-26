@@ -119,7 +119,7 @@ do_socks4(Buffer, State) ->
     case decode_socks4_req(Buffer) of 
         incomplete ->
             {next_state, wait_auth, State#state{buff = Buffer}, ?TIMEOUT};
-        {?SOCKS4_VER, DestAddr, Host, Port, Rest} = Socks4Req ->
+        {?SOCKS4_VER, DestAddr, Host, Port, Rest} = _Socks4Req ->
             case gen_tcp:connect(Host, Port, 
                                              [{active, true}, {packet, raw}, binary,
                                               {reuseaddr, true},
