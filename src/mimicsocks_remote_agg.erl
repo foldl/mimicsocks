@@ -77,16 +77,10 @@ closing(info, _Msg, State) -> {keep_state, State}.
 handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel,
                                                      d_buf = Buf} = State) ->
     All = <<Buf/binary, Bin/binary>>,
-    case parse_full(All, []) of
-        {ok, Frames, Rem} ->
-            State10 = lists:foldl(fun handle_cmd/2, State, Frames),
-            NewState = State10#state{d_buf = Rem},
-            {keep_state, NewState};
-        _ -> 
-            ?ERROR("package parse error, closing later", []),
-            timer:send_after((rand:uniform(10) + 10) *  1000, stop),
-            {next_state, closing, State#state{d_buf = <<>>}}
-    end;
+    {ok, Frames, Rem} = parse_full(All, []),
+    State10 = lists:foldl(fun handle_cmd/2, State, Frames),
+    NewState = State10#state{d_buf = Rem},
+    {keep_state, NewState};
 handle_info({recv, Handler, Data}, _StateName, #state{channel = Channel, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of
         [{Handler, ID}] -> 
@@ -94,6 +88,15 @@ handle_info({recv, Handler, Data}, _StateName, #state{channel = Channel, t_p2i =
         _ -> ok
     end,
     {keep_state, State}; 
+handle_info({'DOWN', _Ref, process, Handler, _Reason}, _StateName, 
+            #state{t_i2p = Ti2p, t_i2p = Tp2i} = State) ->
+    case ets:lookup(Tp2i, Handler) of
+        [{Handler, Id}] -> 
+            ets:match_delete(Tp2i, {Handler, '_'}),
+            ets:match_delete(Ti2p, {Id, '_'});
+        _ -> ok
+    end,
+    {keep_state, State};
 handle_info(Info, StateName, State) ->
     ?ERROR("unexpected ~p in state ~p", [Info, StateName]),
     {keep_state, State}.
@@ -123,11 +126,13 @@ handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
     case ets:lookup(Ti2p, Id) of
         [{Id, Pid}] ->
             ?ERROR("?AGG_CMD_NEW_SOCKET id already exsits, stop it", []),
-            Module:stop(Pid);
+            (catch Module:stop(Pid));
         _ -> ok
     end,
     mimicsocks_wormhole_remote:suspend_mimic(Channel, 5000),
     {ok, NewPid} = Module:start_link([self() | Args]),
+    unlink(NewPid),
+    erlang:monitor(process, NewPid),
     ets:insert(Ti2p, {Id, NewPid}),
     ets:insert(Tp2i, {NewPid, Id}),
     State;

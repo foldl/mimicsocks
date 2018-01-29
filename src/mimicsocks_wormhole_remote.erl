@@ -20,7 +20,8 @@
          wait_ivec/3,
          forward/3,
          wait_sending_cmd/3,
-         wait_ho_complete/3
+         wait_ho_complete/3,
+         bad_key/3
         ]).
 
 -record(state,
@@ -37,6 +38,7 @@
             key,
             ivec,
             ho_id,
+            raw_id,
             id_cipher,
 
             up_stream,
@@ -72,7 +74,7 @@ init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
     All = <<Bin/binary, Buff/binary>>,
     case All of 
-        <<IVec:?MIMICSOCKS_HELLO_SIZE/binary, Rem/binary>> ->
+        <<IVec:?MIMICSOCKS_HELLO_SIZE/binary, ID0:?MIMICSOCKS_HELLO_SIZE/binary, Rem/binary>> ->
             Cipher = crypto:stream_init(aes_ctr, Key, IVec),
             RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
             mimicsocks_inband_recv:set_key(RecvSink, Key),

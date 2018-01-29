@@ -91,6 +91,15 @@ handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel, buf = Bu
     State10 = lists:foldl(fun handle_cmd/2, State, Frames),
     NewState = State10#state{buf = Rem},
     {keep_state, NewState};
+handle_info({tcp_error, Socket, Reason}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, channel = Channel} = State) ->
+    case ets:lookup(Ts2i, Socket) of
+        [{Socket, ID}] -> 
+            Channel ! {recv, self(), <<?AGG_CMD_CLOSE_SOCKET, ID:16/big>>},
+            ets:match_delete(Ts2i, {Socket, '_'}),
+            ets:match_delete(Ti2s, {ID, '_'});
+        _ -> ok
+    end,
+    {keep_state, State};
 handle_info(stop, _StateName, State) -> 
     {stop, normal, State};
 handle_info(Info, _StateName, State) ->
