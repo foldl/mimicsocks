@@ -89,7 +89,7 @@ handle_info({recv, Handler, Data}, _StateName, #state{channel = Channel, t_p2i =
     end,
     {keep_state, State}; 
 handle_info({'DOWN', _Ref, process, Handler, _Reason}, _StateName, 
-            #state{t_i2p = Ti2p, t_i2p = Tp2i} = State) ->
+            #state{t_i2p = Ti2p, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of
         [{Handler, Id}] -> 
             ets:match_delete(Tp2i, {Handler, '_'}),

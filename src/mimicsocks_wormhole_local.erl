@@ -10,7 +10,7 @@
 -export([start_link/1, stop/1, recv/2, suspend_mimic/2]).
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
--export([report_disconn/2, show_sock/1, raw_id_to_id/2]).
+-export([report_disconn/2, show_sock/1, next_id/2]).
 
 % FSM States
 -export([
@@ -53,8 +53,6 @@ callback_mode() ->
             send_inband,
 
             ho_id,
-            raw_id,
-            id_cipher,
 
             rsock,      % remote socket
             rsock2,     % handover socket
@@ -74,8 +72,8 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
     process_flag(trap_exit, true),
     IVec = crypto:strong_rand_bytes(?MIMICSOCKS_HELLO_SIZE),
     Cipher = crypto:stream_init(aes_ctr, Key, IVec),
-    {IdCipher, RawID} = crypto:stream_encrypt(crypto:stream_init(aes_ctr, Key, IVec), IVec),
-    HOID = raw_id_to_id(Key, RawID),
+    ID0 = next_id(Key, IVec),
+    HOID = next_id(Key, ID0),
 
     RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
     mimicsocks_inband_recv:set_key(RecvSink, Key),
@@ -89,7 +87,6 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
     case connect(ServerAddr, ServerPort, T) of
         {ok, RSocket} ->
             ?INFO("Connected to remote ~p:~p\n", [ServerAddr, ServerPort]),
-            ID0 = raw_id_to_id(Key, IVec), 
             gen_tcp:send(RSocket, <<IVec/binary, ID0/binary>>),
             {ok, HOTimer} = create_ho_timer(OtherPorts),
             {ok, forward, #state{
@@ -108,9 +105,7 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
                       send_inband = Send,
                       recv_inband = RecvSink,
                       ho_timer = HOTimer,
-                      ho_id = HOID,
-                      raw_id = RawID,
-                      id_cipher = IdCipher
+                      ho_id = HOID
                       }};
         {error, Reason} ->
             ?ERROR("can't connect to remote: ~p\n", [Reason]),
@@ -120,14 +115,11 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
 forward(info, Info, State) -> handle_info(Info, forward, State).
 
 ho_initiated(info, {ho_socket, ok, RSock2}, #state{
-                             ho_id = Id, id_cipher = Cipher, recv_inband = RecvInband,
-                             key = Key} = StateData) ->
+                             ho_id = Id, recv_inband = RecvInband, key = Key} = StateData) ->
     ?INFO("ho_initiated", []),
     mimicsocks_inband_recv:tapping(RecvInband, true),
     gen_tcp:send(RSock2, Id),
-    {NewCipherState, NewRaw} = crypto:stream_encrypt(Cipher, Id),
-    {next_state, ho_wait_r2l, StateData#state{rsock2 = RSock2, ho_buf = <<>>, 
-     ho_id = raw_id_to_id(Key, NewRaw), raw_id = NewRaw, id_cipher = NewCipherState}};
+    {next_state, ho_wait_r2l, StateData#state{rsock2 = RSock2, ho_buf = <<>>, ho_id = next_id(Key, Id)}};
 ho_initiated(info, {ho_socket, error, Reason}, #state{recv_inband = RecvInband} = StateData) ->
     ?WARNING("ho_initiated failed with reason ~p", [Reason]),
     mimicsocks_inband_recv:tapping(RecvInband, false),
@@ -311,4 +303,4 @@ wait_result(Socket) ->
         X -> X
     end.
 
-raw_id_to_id(Key, Id) -> crypto:hmac(sha, Key, Id, 16).
+next_id(Key, ID) -> crypto:hmac(sha, Key, ID, ?MIMICSOCKS_HELLO_SIZE).

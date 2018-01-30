@@ -46,9 +46,8 @@
 %           Generation of ID(n): n is the No. of handover, while No. 0 is the initial connection
 %              Note: ID(0) is sent to remote immediately after IVec used for authentication
 %
-%              ID(n) = hmac(RAWID(n))[0..15], where              
-%              RAWID(0) = IVec
-%              RAWID(n) = aes_stream(ID(n-1)), n >= 1
+%              ID(0) = hmac(IVec, 16)
+%              ID(n) = hmac(ID(n-1), 16), n >= 1
 %
 % step 2: REMOTE: 
 %           after rsock2 is accepted, remote starts tapping rsock, 

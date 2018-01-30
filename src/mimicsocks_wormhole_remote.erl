@@ -12,7 +12,7 @@
 % callbacks
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
--import(mimicsocks_wormhole_local, [show_sock/1, report_disconn/2]).
+-import(mimicsocks_wormhole_local, [show_sock/1, report_disconn/2, next_id/2]).
 
 % FSM States
 -export([
@@ -38,8 +38,6 @@
             key,
             ivec,
             ho_id,
-            raw_id,
-            id_cipher,
 
             up_stream,
 
@@ -67,39 +65,49 @@ callback_mode() ->
     state_functions.
 
 init(cast, {socket_ready, Socket}, State) when is_port(Socket) ->
-    ok = inet:setopts(Socket, [{active, true}, {packet, raw}, binary]),
+io:format("~p~n", [socket_ready]),
+    Rk = (catch inet:setopts(Socket, [{active, true}, {packet, raw}, binary])),
+io:format("~p~n", [{xx, Rk}]),
     {next_state, wait_ivec, State#state{rsock = Socket}};
 init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
     All = <<Bin/binary, Buff/binary>>,
+    io:format("wait_ivec: ~p~n", [All]),
     case All of 
         <<IVec:?MIMICSOCKS_HELLO_SIZE/binary, ID0:?MIMICSOCKS_HELLO_SIZE/binary, Rem/binary>> ->
-            Cipher = crypto:stream_init(aes_ctr, Key, IVec),
-            RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
-            mimicsocks_inband_recv:set_key(RecvSink, Key),
-            Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, Cipher]),
-            
-            {ok, SendSink} = mimicsocks_mimic:start_link([self()]),
-            SendCrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, Cipher]),
-            Send = mimicsocks_inband_send:start_link([SendCrypt, self()]),
-            mimicsocks_inband_send:set_key(Send, Key),
-            Recv ! {recv, self(), Rem},
+            io:format("~p~n", [{next_id(Key, IVec), ID0}]),
+            case next_id(Key, IVec) of
+                ID0 ->
+                    Cipher = crypto:stream_init(aes_ctr, Key, IVec),
+                    RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
+                    mimicsocks_inband_recv:set_key(RecvSink, Key),
+                    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, Cipher]),
+                    
+                    {ok, SendSink} = mimicsocks_mimic:start_link([self()]),
+                    SendCrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, Cipher]),
+                    Send = mimicsocks_inband_send:start_link([SendCrypt, self()]),
+                    mimicsocks_inband_send:set_key(Send, Key),
+                    Recv ! {recv, self(), Rem},
 
-            {IdCipher, HOID} = crypto:stream_encrypt(crypto:stream_init(aes_ctr, Key, IVec), IVec),
-            mimicsocks_cfg:register_remote(HOID, self()),
-            {next_state, forward, State#state{
-                      ivec = IVec,
-                      recv = Recv,
-                      recv_sink = RecvSink,
-                      send = Send,
-                      send_sink = SendSink,
-                      recv_inband = RecvSink,
-                      send_inband = Send,
-                      ho_id = HOID,
-                      id_cipher = IdCipher
-                      }};
+                    HOID = next_id(Key, ID0),
+                    mimicsocks_cfg:register_remote(HOID, self()),
+                    {next_state, forward, State#state{
+                            ivec = IVec,
+                            recv = Recv,
+                            recv_sink = RecvSink,
+                            send = Send,
+                            send_sink = SendSink,
+                            recv_inband = RecvSink,
+                            send_inband = Send,
+                            ho_id = HOID
+                            }};
+                _ -> 
+                    create_close_timer(),
+                    {next_state, bad_key, State}
+            end;
         _ ->
+            
             {next_state, wait_ivec, State#state{buff = All}}
     end;
 wait_ivec(info, {tcp, _Socket, Bin}, StateData) ->
@@ -107,6 +115,10 @@ wait_ivec(info, {tcp, _Socket, Bin}, StateData) ->
 wait_ivec(info, Msg, StateData) -> handle_info(Msg, wait_ivec, StateData).
 
 forward(info, Msg, StateData) -> handle_info(Msg, forward, StateData).
+
+bad_key(info, {tcp, _Socket, _Bin}, StateData) -> {keep_state, StateData};
+bad_key(info, close, StateData) -> {stop, normal, StateData};
+bad_key(info, Msg, StateData) -> handle_info(Msg, bad_key, StateData).
 
 wait_sending_cmd(info,{cmd_sent, Ref}, #state{cmd_ref = Ref, send = Send} = State) ->
     Send ! {flush, Ref, self()},
@@ -137,15 +149,15 @@ wait_ho_complete(info, {recv, SendSink, Bin}, #state{send_sink = SendSink,
 wait_ho_complete(info, Msg, State) -> handle_info(Msg, wait_ho_complete, State).
 
 handle_info({ho_socket, Socket}, _StateName, #state{send_inband = SendInband, recv_inband = RecvInband,
-                                                    ho_id = Id, id_cipher = Cipher} = StateData) ->
+                                                    ho_id = Id, key = Key} = StateData) ->
     ok = inet:setopts(Socket, [{active, true}]),
     mimicsocks_inband_recv:tapping(RecvInband, true),
     Ref = mimicsocks_inband_send:recv_cmd(SendInband, <<?MIMICSOCKS_INBAND_HO_R2L>>, hold),
-    {NewCipher, NewId} = crypto:stream_encrypt(Cipher, Id),
+    NewId = next_id(Key, Id),
     mimicsocks_cfg:deregister_remote(Id),
     mimicsocks_cfg:register_remote(NewId, self()),
     {next_state, wait_sending_cmd, StateData#state{rsock2 = Socket, cmd_ref = Ref, 
-                                                   ho_id = NewId, id_cipher = NewCipher}};
+                                                   ho_id = NewId}};
 handle_info({inband_cmd, Pid, Cmds}, _StateName, #state{recv_sink = Pid} = State) ->
     parse_cmds(Cmds, self()),
     {keep_state, State};
@@ -197,3 +209,9 @@ parse_cmds(<<?MIMICSOCKS_INBAND_HO_L2R, Port:16/big, Rem/binary>> = _Cmds, Pid) 
 parse_cmds(<<?MIMICSOCKS_INBAND_HO_COMPLETE_L2R, Rem/binary>> = _Cmds, Pid) ->
     Pid ! {inband, ho_complete},
     parse_cmds(Rem, Pid).
+
+-ifdef(debug).
+create_close_timer() -> timer:send_after(100, close).
+-else.
+create_close_timer() -> timer:send_after((rand:uniform(50) + 1) * 60 * 1000, close).
+-endif.

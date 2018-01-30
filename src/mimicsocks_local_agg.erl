@@ -54,7 +54,9 @@ init(Args) ->
         {error, Reason} -> {stop, Reason}
     end.
 
-forward(info, Info, State) -> handle_info(Info, forward, State).
+forward(info, Info, State) -> 
+    ?ERROR("~p~n", [Info]),
+    handle_info(Info, forward, State).
 
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
                                                  channel = Channel} = State) ->
@@ -91,7 +93,7 @@ handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel, buf = Bu
     State10 = lists:foldl(fun handle_cmd/2, State, Frames),
     NewState = State10#state{buf = Rem},
     {keep_state, NewState};
-handle_info({tcp_error, Socket, Reason}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, channel = Channel} = State) ->
+handle_info({tcp_error, Socket, _Reason}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, channel = Channel} = State) ->
     case ets:lookup(Ts2i, Socket) of
         [{Socket, ID}] -> 
             Channel ! {recv, self(), <<?AGG_CMD_CLOSE_SOCKET, ID:16/big>>},
