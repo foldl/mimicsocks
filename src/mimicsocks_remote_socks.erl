@@ -107,11 +107,11 @@ wait_auth(cast, {local, Bin}, State) ->
         {error, {not_supported_version, ?SOCKS4_VER}} ->
             do_socks4(Buffer, State);
         Error ->
-            ?ERROR("socks5_auth with error: ~p\n", [Error]),
+            ?ERROR("socks5_auth with error: ~p~n", [Error]),
             {stop, Error, State}
     end;
 wait_auth(timeout, _, State) ->
-    ?ERROR("Client connection timeout: wait_req\n", []),
+    ?ERROR("Client connection timeout: wait_req~n", []),
     {stop, normal, State};
 wait_auth(info, Msg, StateData) -> handle_info(Msg, wait_auth, StateData).
 
@@ -141,7 +141,7 @@ do_socks4(Buffer, State) ->
                     {stop, normal, State}
             end;
         Error ->
-            ?ERROR("socks4 with error: ~p\n", [Error]),
+            ?ERROR("socks4 with error: ~p~n", [Error]),
             {stop, Error, State}
     end.
 
@@ -172,17 +172,17 @@ wait_req(cast, {local, Bin}, State) ->
                     {next_state, data, 
                      State#state{buff= <<>>, rsock = RSocket}};
                 {error, Reason} ->
-                    ?ERROR("wait_req can't connect to remote: ~p, ~p\n", [{Addr, Port}, Reason]),
+                    ?ERROR("wait_req can't connect to remote: ~p, ~p~n", [{Addr, Port}, Reason]),
                     Socks5Rsp = <<?SOCKS5_VER:8, 1:8, ?SOCKS5_RESERVED_FIELD:8>>,
                     send_to_local(State#state.local, [Socks5Rsp, Target]),
                     {stop, normal, State}
             end;
         Error ->
-            ?ERROR("wait_req with error: ~p\n", [Error]),
+            ?ERROR("wait_req with error: ~p~n", [Error]),
             {stop, Error, State}            
     end;
 wait_req(timeout, _, State) ->
-    ?ERROR("Client connection timeout: wait_req\n", []),
+    ?ERROR("Client connection timeout: wait_req~n", []),
     {stop, normal, State};
 wait_req(info, Msg, StateData) -> handle_info(Msg, wait_req, StateData).
 

@@ -108,7 +108,7 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
                       ho_id = HOID
                       }};
         {error, Reason} ->
-            ?ERROR("can't connect to remote: ~p\n", [Reason]),
+            ?ERROR("can't connect to remote: ~p~n", [Reason]),
             {stop, Reason}
     end.
 
@@ -264,7 +264,7 @@ connect(ServerAddr, ServerPort, [{http_proxy, ProxyAddr, ProxyPort}]) ->
                     inet:setopts(Socket, [{active, true}]),
                     {ok, Socket};
                 OtherError ->
-                    io:format("error: ~p~n", [OtherError]), 
+                    ?ERROR("~p~n", [OtherError]), 
                     gen_tcp:close(Socket),
                     OtherError
             end;

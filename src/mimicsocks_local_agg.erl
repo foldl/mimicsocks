@@ -54,9 +54,7 @@ init(Args) ->
         {error, Reason} -> {stop, Reason}
     end.
 
-forward(info, Info, State) -> 
-    ?ERROR("~p~n", [Info]),
-    handle_info(Info, forward, State).
+forward(info, Info, State) -> handle_info(Info, forward, State).
 
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
                                                  channel = Channel} = State) ->

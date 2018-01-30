@@ -65,18 +65,14 @@ callback_mode() ->
     state_functions.
 
 init(cast, {socket_ready, Socket}, State) when is_port(Socket) ->
-io:format("~p~n", [socket_ready]),
-    Rk = (catch inet:setopts(Socket, [{active, true}, {packet, raw}, binary])),
-io:format("~p~n", [{xx, Rk}]),
+    ok = (catch inet:setopts(Socket, [{active, true}, {packet, raw}, binary])),
     {next_state, wait_ivec, State#state{rsock = Socket}};
 init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
     All = <<Bin/binary, Buff/binary>>,
-    io:format("wait_ivec: ~p~n", [All]),
     case All of 
         <<IVec:?MIMICSOCKS_HELLO_SIZE/binary, ID0:?MIMICSOCKS_HELLO_SIZE/binary, Rem/binary>> ->
-            io:format("~p~n", [{next_id(Key, IVec), ID0}]),
             case next_id(Key, IVec) of
                 ID0 ->
                     Cipher = crypto:stream_init(aes_ctr, Key, IVec),

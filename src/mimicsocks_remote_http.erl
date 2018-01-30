@@ -73,12 +73,12 @@ wait_req(cast, {local, Bin}, State) ->
                     {next_state, data, 
                      State#state{buff= <<>>, rsock = RSocket}};
                 {error, Reason} ->
-                    ?ERROR("wait_req can't connect to remote: ~p, ~p\n", [{Host, Port}, Reason]),
+                    ?ERROR("wait_req can't connect to remote: ~p, ~p~n", [{Host, Port}, Reason]),
                     send_to_local(State#state.local, [Ver, <<" 504 Gateway Time-out\r\n">>]),
                     {stop, normal, State}
             end;
         Error ->
-            ?ERROR("wait_req with error: ~p\n", [Error]),
+            ?ERROR("wait_req with error: ~p~n", [Error]),
             {stop, Error, State}            
     end;
 wait_req(info, Msg, StateData) -> handle_info(Msg, wait_req, StateData).
