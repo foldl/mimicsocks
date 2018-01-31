@@ -70,7 +70,7 @@ callback_mode() ->
 %% callback funcitons
 init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
     process_flag(trap_exit, true),
-    IVec = crypto:strong_rand_bytes(?MIMICSOCKS_HELLO_SIZE),
+    IVec = gen_ivec(),
     Cipher = crypto:stream_init(aes_ctr, Key, IVec),
     ID0 = next_id(Key, IVec),
     HOID = next_id(Key, ID0),
@@ -119,13 +119,16 @@ ho_initiated(info, {ho_socket, ok, RSock2}, #state{
     ?INFO("ho_initiated", []),
     mimicsocks_inband_recv:tapping(RecvInband, true),
     gen_tcp:send(RSock2, Id),
-    {next_state, ho_wait_r2l, StateData#state{rsock2 = RSock2, ho_buf = <<>>, ho_id = next_id(Key, Id)}};
+    {next_state, ho_wait_r2l, 
+                 StateData#state{rsock2 = RSock2, ho_buf = <<>>, ho_id = next_id(Key, Id)},
+                 [{state_timeout, 3000, ho_wait_r2l}]};
 ho_initiated(info, {ho_socket, error, Reason}, #state{recv_inband = RecvInband} = StateData) ->
     ?WARNING("ho_initiated failed with reason ~p", [Reason]),
     mimicsocks_inband_recv:tapping(RecvInband, false),
     {next_state, forward, StateData};
 ho_initiated(info, Msg, Data) -> handle_info(Msg, ho_initiated, Data).
 
+ho_wait_r2l(state_timeout, _, StateData) -> {stop, {ho_wait_r2l, state_timeout}, StateData};
 ho_wait_r2l(info, {inband, ho_r2l}, #state{recv = Recv, ho_buf = Buf,
                                                send_inband = SendInband,
                                                recv_inband = RecvInband} = StateData) ->
@@ -304,3 +307,14 @@ wait_result(Socket) ->
     end.
 
 next_id(Key, ID) -> crypto:hmac(sha, Key, ID, ?MIMICSOCKS_HELLO_SIZE).
+
+%@doc generate a IVEC using random algo in order to randomized entropy on IVEC
+gen_ivec() ->
+    L = lists:seq(1, ?MIMICSOCKS_HELLO_SIZE),
+    T = rand:uniform(256) - 1,
+    case rand:uniform(3) of
+        1 -> crypto:strong_rand_bytes(?MIMICSOCKS_HELLO_SIZE);
+        _ -> 
+            Q = 256 div rand:uniform(10),
+            list_to_binary([(rand:uniform(Q) + T) rem 256 || _ <- L])
+    end.

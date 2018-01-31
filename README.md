@@ -4,6 +4,22 @@ Mimicsocks is just another TCP forwarder, relay, tunnel or proxy, inspired by Sh
 
 查看[简体中文版](README.zh.md).
 
+```
+                                                    handlers
+
+                                                   +--------+
+                                              +---->  http  <-->
+                                              |    +--------+
+                                              |
++-----------+    wormhole    +------------+   |    +--------+
+|   local   <- - - - - - - - >   remote   <---+----> socks  <-->
++-----------+                +------------+   |    +--------+
+                                              |
+                                              |    +--------+
+                                              +----> relay  <-->
+                                                   +--------+
+```
+
 ## Features
 
 * Chainable
