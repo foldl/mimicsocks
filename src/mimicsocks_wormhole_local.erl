@@ -128,7 +128,8 @@ ho_initiated(info, {ho_socket, error, Reason}, #state{recv_inband = RecvInband} 
     {next_state, forward, StateData};
 ho_initiated(info, Msg, Data) -> handle_info(Msg, ho_initiated, Data).
 
-ho_wait_r2l(state_timeout, _, StateData) -> {stop, {ho_wait_r2l, state_timeout}, StateData};
+ho_wait_r2l(state_timeout, _, StateData) -> 
+    {stop, {ho_wait_r2l, state_timeout}, StateData#state{ho_buf = <<"trunced">>}};
 ho_wait_r2l(info, {inband, ho_r2l}, #state{recv = Recv, ho_buf = Buf,
                                                send_inband = SendInband,
                                                recv_inband = RecvInband} = StateData) ->
