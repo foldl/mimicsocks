@@ -65,8 +65,6 @@ callback_mode() ->
         }
        ).
 
--define(REMOTE_TCP_OPTS, [{active, true}, {packet, raw}, binary, {reuseaddr, true}, {keepalive, true}]).
-
 %% callback funcitons
 init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
     process_flag(trap_exit, true),
@@ -129,7 +127,7 @@ ho_initiated(info, {ho_socket, error, Reason}, #state{recv_inband = RecvInband} 
 ho_initiated(info, Msg, Data) -> handle_info(Msg, ho_initiated, Data).
 
 ho_wait_r2l(state_timeout, _, StateData) -> 
-    {stop, {ho_wait_r2l, state_timeout}, StateData#state{ho_buf = <<"trunced">>}};
+    {stop, {ho_wait_r2l, state_timeout}, StateData#state{ho_buf = <<"... truncated ...">>}};
 ho_wait_r2l(info, {inband, ho_r2l}, #state{recv = Recv, ho_buf = Buf,
                                                send_inband = SendInband,
                                                recv_inband = RecvInband} = StateData) ->
@@ -254,8 +252,11 @@ parse_cmds(<<?MIMICSOCKS_INBAND_HO_COMPLETE_R2L, Rem/binary>> = _Cmds, Pid) ->
     Pid ! {inband, ho_complete},
     parse_cmds(Rem, Pid).
 
+-define(REMOTE_TCP_OPTS, [{packet, raw}, binary, {reuseaddr, true}, {keepalive, true},
+                          {send_timeout, 3000}, {send_timeout_close, true}]).
+
 connect(ServerAddr, ServerPort, [{http_proxy, ProxyAddr, ProxyPort}]) ->
-    case gen_tcp:connect(ProxyAddr, ProxyPort, [{active, false}, {packet, raw}, binary, {reuseaddr, true}, {keepalive, true}]) of
+    case gen_tcp:connect(ProxyAddr, ProxyPort, [{active, false} | ?REMOTE_TCP_OPTS]) of
         {ok, Socket} ->
             Req = ["CONNECT ", ip_to_list(ServerAddr), ":", integer_to_list(ServerPort), " HTTP/1.1\r\n\r\n"],
             gen_tcp:send(Socket, Req),
@@ -275,7 +276,7 @@ connect(ServerAddr, ServerPort, [{http_proxy, ProxyAddr, ProxyPort}]) ->
         Result -> Result
     end;
 connect(ServerAddr, ServerPort, _) ->
-    gen_tcp:connect(ServerAddr, ServerPort, ?REMOTE_TCP_OPTS).
+    gen_tcp:connect(ServerAddr, ServerPort, [{active, true} | ?REMOTE_TCP_OPTS]).
 
 ip_to_list(X) when is_list(X) -> X;
 ip_to_list({A,B,C,D}) -> 

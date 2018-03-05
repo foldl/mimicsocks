@@ -41,7 +41,7 @@ Both ends are specified by an IP address and port.
 
 Data put into the local end will be transmitted to the remote end
 secretly and magically. Once data arrives at the remote end, it is served by
-a data handler. Mimicsocks has two handlers:
+a data handler. Mimicsocks has three handlers:
 
 * A simple socks4/4a/5 proxy
 
@@ -179,7 +179,7 @@ Take Windows as an example.
 
     On remote & local machine:
     ```shell
-     erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
+    erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
     ```
 
     For aggregated ones, remote end should be started ahead of local end.

@@ -172,6 +172,9 @@ handle_info({tcp, Socket, Bin}, _StateName, #state{rsock = Socket, recv = Recv} 
 handle_info({tcp_closed, Socket}, _StateName, #state{rsock = Socket} = StateData) ->
     report_disconn(Socket, "Remote"),
     {stop, normal, StateData};
+handle_info({tcp_closed, Socket2}, _StateName, StateData) ->
+    report_disconn(Socket2, "Remote2"),
+    {stop, normal, StateData};
 handle_info({suspend_mimic, Duration}, _StateName, #state{send_sink = SendSink} = State) ->
     mimicsocks_mimic:suspend(SendSink, Duration),
     {keep_state, State};

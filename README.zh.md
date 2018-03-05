@@ -39,7 +39,7 @@ View [English version](README.md).
 Mimicsocks 就是一个有两个端点（本端和远端）的虫洞。端点由 IP 地址和端口号指定。
 
 进入本端的数据会被秘密地传输到远端。数据到达远端后交由数据处理模块处理。目前，Mimicsocks
-有两种处理模块。
+有三种处理模块。
 
 * 简单的 socks4/4a/5 代理服务器
 
@@ -158,7 +158,7 @@ Take Windows as an example.
 
     On remote & local machine:
     ```shell
-     erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
+    erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
     ```
 
     For aggregated ones, remote end should be started ahead of local end.
