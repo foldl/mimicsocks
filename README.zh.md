@@ -1,5 +1,7 @@
 # Mimicsocks: 又一个 TCP 代理
 
+[![Build Status](https://travis-ci.org/foldl/mimicsocks.svg?branch=master)](https://travis-ci.org/foldl/mimicsocks)
+
 Mimicsocks 是 TCP 转发器、中继、隧道、代理，在 Shadowsocks 的启发和文献 [1] 的激励下诞生。
 
 View [English version](README.md).

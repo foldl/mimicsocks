@@ -1,5 +1,7 @@
 # Mimicsocks: just another TCP proxy
 
+[![Build Status](https://travis-ci.org/foldl/mimicsocks.svg?branch=master)](https://travis-ci.org/foldl/mimicsocks)
+
 Mimicsocks is just another TCP forwarder, relay, tunnel or proxy, inspired by Shadowsocks and stimulated by [1].
 
 查看[简体中文版](README.zh.md).
