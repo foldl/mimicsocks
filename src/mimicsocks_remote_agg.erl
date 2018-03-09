@@ -52,6 +52,8 @@ socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
 init([Key, HandlerMod, HandlerArgs]) ->
     case mimicsocks_wormhole_remote:start_link([self(), Key]) of
         {ok, Channel} ->
+            erlang:monitor(process, Channel),
+            unlink(Channel),
             {ok, init, #state{handler_mod = HandlerMod,
                               handler_args = HandlerArgs,
                               t_i2p = ets:new(tablei2p, []),
@@ -88,6 +90,9 @@ handle_info({recv, Handler, Data}, _StateName, #state{channel = Channel, t_p2i =
         _ -> ok
     end,
     {keep_state, State}; 
+handle_info({'DOWN', _Ref, process, Channel, _Reason}, _StateName, 
+            #state{channel = Channel} = _State) ->
+    {stop, normal};
 handle_info({'DOWN', _Ref, process, Handler, _Reason}, _StateName, 
             #state{t_i2p = Ti2p, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of

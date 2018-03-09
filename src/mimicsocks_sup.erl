@@ -11,14 +11,17 @@ start_link() ->
         {ok, X} when  is_atom(X) -> X;
         _ -> mimicsocks
     end,
-    start_link(Config, fun filter_all_true/1).
+    start_link(Config, both).
 
-start_link(skip_localhost) ->
-    start_link(mimicsocks, fun filter_localhost/1);
-start_link(Config) -> start_link(Config, fun filter_all_true/1).
+start_link(local) ->
+    start_link(mimicsocks, local);
+start_link(remote) ->
+    start_link(mimicsocks, remote);
+start_link(both) ->
+    start_link(mimicsocks, both);
+start_link(Config) -> start_link(Config, both).
 
-start_link(Config, skip_localhost) -> start_link(Config, fun filter_localhost/1);
-start_link(Config, IpFilter) when is_function(IpFilter) ->
+start_link(Config, Type) ->
     mimicsocks_cfg:start_link(Config),
     Set = sets:from_list(
         case application:get_env(mimicsocks, log) of
@@ -32,14 +35,20 @@ start_link(Config, IpFilter) when is_function(IpFilter) ->
         _ -> ok
     end,
     error_logger:tty(true), % sets:is_element(tty, Set)),
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [IpFilter]).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [Type]).
 
-init([IpFilter]) ->
+init([Type]) ->
     Servers = mimicsocks_cfg:list_servers(),
-    LocalAddresses = sets:from_list(lists:filter(IpFilter, list_addrs())),
+    LocalAddresses = sets:from_list(list_addrs()),
 
-    ChildLocal = [create_local_child(LocalAddresses, X) || X <- Servers],
-    ChildRemote = [create_remote_child(LocalAddresses, X) || X <- Servers],
+    ChildLocal = case (Type == both) or (Type == local) of
+        true -> [create_local_child(LocalAddresses, X) || X <- Servers];
+        _ -> []
+    end,
+    ChildRemote = case (Type == both) or (Type == remote) of
+        true -> [create_remote_child(LocalAddresses, X) || X <- Servers];
+        _ -> []
+    end,
     Children = lists:flatten(ChildRemote ++ ChildLocal),
 
     SupFlags = #{strategy => one_for_one, intensity => 5, period => 5},
@@ -125,9 +134,3 @@ create_remote_child(LocalAddresses, Server) ->
             [RemoteMain | HoWorkers];
         _ -> []
     end.
-
-filter_all_true(_) -> true.
-
-filter_localhost({127,0,0,1}) -> false;
-filter_localhost({0,0,0,0,0,0,0,1}) -> false;
-filter_localhost(_) -> true.

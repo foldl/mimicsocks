@@ -174,7 +174,7 @@ handle_info({tcp_closed, Socket}, _StateName, #state{rsock = Socket} = StateData
     {stop, normal, StateData};
 handle_info({tcp_closed, Socket2}, _StateName, StateData) ->
     report_disconn(Socket2, "Remote2"),
-    {stop, normal, StateData};
+    {stop, ho_error, StateData};
 handle_info({suspend_mimic, Duration}, _StateName, #state{send_sink = SendSink} = State) ->
     mimicsocks_mimic:suspend(SendSink, Duration),
     {keep_state, State};
@@ -186,10 +186,12 @@ handle_info(Info, StateName, State) ->
     {keep_state, State}.
 
 terminate(_Reason, _StateName, #state{rsock=RSocket,
+                                      rsock2 = RSocket2,
                                       recv = Recv,
                                       send = Send,
                                       ho_id = Id}) ->
     (catch gen_tcp:close(RSocket)),
+    (catch gen_tcp:close(RSocket2)),
     (catch Recv ! stop),
     (catch Send ! stop), 
     mimicsocks_cfg:deregister_remote(Id),
