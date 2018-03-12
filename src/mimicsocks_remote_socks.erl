@@ -8,7 +8,7 @@
 -behaviour(gen_statem).
 
 % api
--export([start_link/1, socket_ready/2, stop/1]).
+-export([start_link/1, socket_ready/2, stop/1, active/2]).
 
 % callbacks
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
@@ -39,6 +39,8 @@ start_link(Args) ->
 socket_ready(Pid, Sock) when is_port(Sock) ->
     ok = gen_tcp:controlling_process(Sock, Pid),
     gen_statem:cast(Pid, {socket_ready, Sock}).
+
+active(Pid, Option) -> Pid ! {active, Option}.
 
 stop(Pid) -> gen_statem:stop(Pid).
 
@@ -194,6 +196,9 @@ data(cast, {remote, Bin}, State) ->
     {next_state, data, State};
 data(info, Msg, StateData) -> handle_info(Msg, data, StateData).
 
+handle_info({active, Option}, _StateName, #state{rsock = Socket} = StateData) ->
+    ok = inet:setopts(Socket, [{active, Option}]),
+    {keep_state, StateData};
 handle_info({recv, From, Bin}, StateName, StateData) when is_pid(From) ->
     ?MODULE:StateName(cast, {local, Bin}, StateData);
 handle_info({tcp, Socket, Bin}, StateName, #state{local=Socket} = StateData) ->

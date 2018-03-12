@@ -2,7 +2,7 @@
 %@author    foldl@outlook.com
 -module(mimicsocks_remote_relay).
 
--export([start_link/1, stop/1, recv/2]).
+-export([start_link/1, stop/1, recv/2, active/2]).
 
 -include("mimicsocks.hrl").
 
@@ -20,6 +20,8 @@ recv(Pid, Bin) ->
     Pid ! {recv, self(), Bin}.
 
 stop(Pid) -> Pid ! stop.
+
+active(Pid, Option) -> Pid ! {active, Option}.
 
 init([Addr, Port, Local]) ->
     % connect to remote server & send first message
@@ -40,6 +42,9 @@ loop(#state{local = Local, sock = Socket} = State) ->
             ok;
         {recv, Local, Bin} ->
             gen_tcp:send(Socket, Bin),
+            loop(State);
+        {active, Option} ->
+            ok = inet:setops(Socket, [{active, Option}]),
             loop(State);
         stop ->
             ok;

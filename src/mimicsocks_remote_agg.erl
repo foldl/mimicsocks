@@ -83,11 +83,27 @@ handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel,
     State10 = lists:foldl(fun handle_cmd/2, State, Frames),
     NewState = State10#state{d_buf = Rem},
     {keep_state, NewState};
-handle_info({recv, Handler, Data}, _StateName, #state{channel = Channel, t_p2i = Tp2i} = State) ->
+handle_info({recv, Handler, Data}, _StateName, #state{handler_mod = Mod, channel = Channel, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of
         [{Handler, ID}] -> 
-            send_data(Channel, ID, Data);
+            % traffic control
+            case process_info(Channel, status) of
+                {status, suspended} ->
+                    Mod:active(Handler, false),
+                    timer:send_after(20, {recv, Handler, ID, Data});
+                _ ->
+                    send_data(Channel, ID, Data)
+            end;
         _ -> ok
+    end,
+    {keep_state, State}; 
+handle_info({recv, Handler, ID, Data} = Msg, _StateName, #state{handler_mod = Mod, channel = Channel} = State) ->
+    case process_info(Channel, status) of
+        {status, suspended} ->
+            timer:send_after(20, Msg);
+        _ ->
+            send_data(Channel, ID, Data),
+            Mod:active(Handler, true)
     end,
     {keep_state, State}; 
 handle_info({'DOWN', _Ref, process, Channel, _Reason}, _StateName, 
