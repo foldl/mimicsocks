@@ -87,8 +87,8 @@ handle_info({recv, Handler, Data}, _StateName, #state{handler_mod = Mod, channel
     case ets:lookup(Tp2i, Handler) of
         [{Handler, ID}] -> 
             % traffic control
-            case process_info(Channel, status) of
-                {status, suspended} ->
+            case proc_high(Channel) of
+                true ->
                     Mod:active(Handler, false),
                     timer:send_after(20, {recv, Handler, ID, Data});
                 _ ->
@@ -98,8 +98,8 @@ handle_info({recv, Handler, Data}, _StateName, #state{handler_mod = Mod, channel
     end,
     {keep_state, State}; 
 handle_info({recv, Handler, ID, Data} = Msg, _StateName, #state{handler_mod = Mod, channel = Channel} = State) ->
-    case process_info(Channel, status) of
-        {status, suspended} ->
+    case proc_low(Channel) of
+        true ->
             timer:send_after(20, Msg);
         _ ->
             send_data(Channel, ID, Data),
@@ -175,3 +175,6 @@ handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2p = Ti2p} = State) ->
             ?WARNING("invalid port id: ~p", [Id])
     end,
     State.
+
+proc_high(Pid) -> process_info(Pid, message_queue_len) > 20.
+proc_low(Pid) -> process_info(Pid, message_queue_len) < 5.
