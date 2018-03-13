@@ -94,7 +94,10 @@ data(cast, {remote, Bin}, State) ->
 data(info, Msg, StateData) -> handle_info(Msg, data, StateData).
 
 handle_info({active, Option}, _StateName, #state{rsock = Socket} = StateData) ->
-    ok = inet:setopts(Socket, [{active, Option}]),
+    case is_port(Socket) of
+        true -> ok = inet:setopts(Socket, [{active, Option}]);
+        _ -> ok
+    end,
     {keep_state, StateData};
 handle_info({recv, From, Bin}, StateName, StateData) when is_pid(From) ->
     ?MODULE:StateName(cast, {local, Bin}, StateData);
