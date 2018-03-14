@@ -176,5 +176,5 @@ handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2p = Ti2p} = State) ->
     end,
     State.
 
-proc_high(Pid) -> process_info(Pid, message_queue_len) > 300.
-proc_low(Pid) -> process_info(Pid, message_queue_len) < 50.
+proc_high(Pid) -> process_info(Pid, message_queue_len) > 8000.
+proc_low(Pid) -> process_info(Pid, message_queue_len) < 1000.
