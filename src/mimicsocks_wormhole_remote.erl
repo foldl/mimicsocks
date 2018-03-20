@@ -113,7 +113,7 @@ wait_ivec(info, Msg, StateData) -> handle_info(Msg, wait_ivec, StateData).
 forward(info, Msg, StateData) -> handle_info(Msg, forward, StateData).
 
 bad_key(info, {tcp, _Socket, _Bin}, StateData) -> {keep_state, StateData};
-bad_key(info, close, StateData) -> {stop, normal, StateData};
+bad_key(info, close, StateData) -> {stop, bad_key, StateData};
 bad_key(info, Msg, StateData) -> handle_info(Msg, bad_key, StateData).
 
 wait_sending_cmd(info,{cmd_sent, Ref}, #state{cmd_ref = Ref, send = Send} = State) ->
@@ -171,7 +171,7 @@ handle_info({tcp, Socket, Bin}, _StateName, #state{rsock = Socket, recv = Recv} 
     {keep_state, State};
 handle_info({tcp_closed, Socket}, _StateName, #state{rsock = Socket} = StateData) ->
     report_disconn(Socket, "Remote"),
-    {stop, normal, StateData};
+    {stop, local_down, StateData};
 handle_info({tcp_closed, Socket2}, _StateName, StateData) ->
     report_disconn(Socket2, "Remote2"),
     {stop, ho_error, StateData};
