@@ -27,6 +27,7 @@
 -record(state,
         {
             channel,
+            wormhole,
 
             handler_mod,
             handler_args,
@@ -50,13 +51,17 @@ socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 init([Key, HandlerMod, HandlerArgs]) ->
-    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
+    init0(mimicsocks_wormhole_remote, init, [Key], HandlerMod, HandlerArgs).
+
+init0(Mod, InitState, Args, HandlerMod, HandlerArgs) ->
+    case Mod:start_link([self() | Args]) of
         {ok, Channel} ->
-            {ok, init, #state{handler_mod = HandlerMod,
+            {ok, InitState, #state{handler_mod = HandlerMod,
                               handler_args = HandlerArgs,
                               t_i2p = ets:new(tablei2p, []),
                               t_p2i = ets:new(tablep2i, []),
-                              channel = Channel}};
+                              channel = Channel,
+                              wormhole = Mod}};
         {error, Reason} -> {stop, Reason}
     end.
 

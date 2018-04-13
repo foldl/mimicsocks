@@ -7,13 +7,14 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/1, stop/1, accept/2]).
+-export([start_link/1, stop/1, accept/2, socket_ready/2]).
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
 -import(mimicsocks_wormhole_local, [show_sock/1]).
 
 % FSM States
 -export([
+         init/3,
          forward/3
         ]).
 
@@ -27,6 +28,10 @@ accept(Pid, Socket) ->
     ok = gen_tcp:controlling_process(Socket, Pid),
     Pid ! {accept, Socket}.
 
+socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
+    gen_tcp:controlling_process(LSock, Pid),
+    gen_statem:cast(Pid, {socket_ready, LSock}).
+
 stop(Pid) -> gen_statem:stop(Pid).
 
 callback_mode() ->
@@ -39,31 +44,44 @@ callback_mode() ->
             t_s2i,
             t_i2s,
 
+            wormhole,
+
             buf = <<>>
         }
        ).
 
 %% callback funcitons
+init([reverse | Args]) ->
+    init0(mimicsocks_wormhole_remote, init, Args);
 init(Args) ->
-    case mimicsocks_wormhole_local:start_link([self() | Args]) of
+    init0(mimicsocks_wormhole_local, forward, Args).
+
+init0(Mod, InitState, Args) ->
+    case Mod:start_link([self() | Args]) of
         {ok, Channel} ->
-            {ok, forward, #state{channel = Channel,
+            {ok, InitState, #state{channel = Channel,
                       t_i2s = ets:new(tablei2s, []),
-                      t_s2i = ets:new(tables2i, [])
+                      t_s2i = ets:new(tables2i, []),
+                      wormhole = Mod
                       }};
         {error, Reason} -> {stop, Reason}
     end.
 
+init(cast, {socket_ready, Socket}, #state{channel = Channel, wormhole = Mod} = State) when is_port(Socket) ->
+    Mod:socket_ready(Channel, Socket),
+    {next_state, forward, State};
+init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
+
 forward(info, Info, State) -> handle_info(Info, forward, State).
 
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
-                                                 channel = Channel} = State) ->
+                                                 channel = Channel, wormhole = Mod} = State) ->
     case {inet:setopts(Socket, [{active, true}]), inet:peername(Socket)} of
         {ok, {ok, {_Addr, Port}}} ->
             ets:insert(Ti2s, {Port, Socket}),
             ets:insert(Ts2i, {Socket, Port}),
-            mimicsocks_wormhole_local:suspend_mimic(Channel, 5000),
-            mimicsocks_wormhole_local:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>);
+            Mod:suspend_mimic(Channel, 5000),
+            Mod:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>);
         Error -> 
             ?ERROR("can't get port ~p~n", [Error]),
             gen_tcp:close(Socket)
@@ -106,9 +124,9 @@ handle_info(Info, _StateName, State) ->
     ?WARNING("unexpected msg: ~p", [Info]),
     {keep_state, State}.
 
-terminate(_Reason, _StateName, #state{channel = Channel, t_i2s = T1, t_s2i = T2} =
+terminate(_Reason, _StateName, #state{channel = Channel, t_i2s = T1, t_s2i = T2, wormhole = Mod} =
             _State) ->
-    (catch mimicsocks_wormhole_local:stop(Channel)),
+    (catch Mod:stop(Channel)),
     (catch ets:delete(T1)),
     (catch ets:delete(T2)),
     normal.
