@@ -66,10 +66,26 @@ list_addrs() ->
 
 %@doc create child spec for local node
 create_local_child(LocalAddresses, Server) ->
-    {Ip, Port} = mimicsocks_cfg:get_value(Server, local),
-    {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, remote),
+    case mimicsocks_cfg:get_value(Server, reverse) of
+        true -> 
+            aggregated = mimicsocks_cfg:get_value(Server, wormhole),
+            create_local_child1(LocalAddresses, Server);
+        _    -> create_local_child0(LocalAddresses, Server)
+    end.
+
+create_remote_child(LocalAddresses, Server) ->
+    case mimicsocks_cfg:get_value(Server, reverse) of
+        true -> 
+            aggregated = mimicsocks_cfg:get_value(Server, wormhole),
+            create_remote_child1(LocalAddresses, Server);
+        _    -> create_remote_child0(LocalAddresses, Server)
+    end.
+
+create_local_child0(LocalAddresses, Server) ->
+    {Ip, Port} = mimicsocks_cfg:get_value(Server, server),
+    {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, wormhole_remote),
     Key = mimicsocks_cfg:get_value(Server, key),
-    OtherPorts = mimicsocks_cfg:get_value(Server, remote_extra_ports),
+    OtherPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
     LocalProxy = mimicsocks_cfg:get_value(Server, local_proxy),
     LocalArgs = [RemoteIp, RemotePort, OtherPorts, Key, LocalProxy],
     case sets:is_element(Ip, LocalAddresses) of
@@ -93,23 +109,28 @@ create_local_child(LocalAddresses, Server) ->
         _ -> []
     end.
 
-%@doc create child spec for remote node
-create_remote_child(LocalAddresses, Server) ->
-    {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, remote),
+create_local_child1(LocalAddresses, Server) ->
+    {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, wormhole_remote),
     Key = mimicsocks_cfg:get_value(Server, key),
-    {Handler, HandlerArgs} = case mimicsocks_cfg:get_value(Server, remote_handler) of
-        socks5 -> {mimicsocks_remote_socks, []};
-        socks4 -> {mimicsocks_remote_socks, []};
-        socks  -> {mimicsocks_remote_socks, []};
-        http -> {mimicsocks_remote_http, []};
-        {relay, {RelayIp, RelayPort}} ->
-            {mimicsocks_remote_relay, [RelayIp, RelayPort]};
-        {relay, ProxyName} when is_atom(ProxyName) ->
-            {RelayIp, RelayPort} = mimicsocks_cfg:get_value(ProxyName, local),
-            {mimicsocks_remote_relay, [RelayIp, RelayPort]}
-    end,
+    {Handler, HandlerArgs} = get_handler_cfg(Server),
 
-    ExtraPorts = mimicsocks_cfg:get_value(Server, remote_extra_ports),
+    case sets:is_element(RemoteIp, LocalAddresses) of
+        true -> 
+            RemoteArgs = [reverse, RemoteIp, RemotePort, Key, Handler, HandlerArgs],
+            #{
+                start => {mimicsocks_remote_agg, start_link, [RemoteArgs]},
+                restart => permanent,
+                shutdown => brutal_kill
+            };
+        _ -> []
+    end.
+
+%@doc create child spec for remote node
+create_remote_child0(LocalAddresses, Server) ->
+    {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, wormhole_remote),
+    Key = mimicsocks_cfg:get_value(Server, key),
+    {Handler, HandlerArgs} = get_handler_cfg(Server),
+    ExtraPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
 
     Mod = case mimicsocks_cfg:get_value(Server, wormhole) of
                 aggregated -> mimicsocks_remote_agg;
@@ -133,4 +154,42 @@ create_remote_child(LocalAddresses, Server) ->
             } || APort <- ExtraPorts],
             [RemoteMain | HoWorkers];
         _ -> []
+    end.
+
+create_remote_child1(LocalAddresses, Server) ->
+    {Ip, Port} = mimicsocks_cfg:get_value(Server, server),
+    {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, wormhole_remote),
+    Key = mimicsocks_cfg:get_value(Server, key),
+    ExtraPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
+    LocalArgs = [reverse, RemoteIp, RemotePort, Key],
+
+    case sets:is_element(RemoteIp, LocalAddresses) of
+        true ->             
+            LocalServerArgs = [Ip, Port, mimicsocks_local_agg, {agg, LocalArgs}],
+            Server = #{
+                start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
+                restart => permanent,
+                shutdown => brutal_kill
+            },
+            HoWorkers = [#{
+                start => {mimicsocks_tcp_listener, start_link, 
+                          [[RemoteIp, APort, mimicsocks_remote_ho, []]]},
+                restart => permanent,
+                shutdown => brutal_kill
+            } || APort <- ExtraPorts],
+            [Server | HoWorkers];
+        _ -> []
+    end.
+
+get_handler_cfg(Server) ->
+    case mimicsocks_cfg:get_value(Server, handler) of
+        socks5 -> {mimicsocks_remote_socks, []};
+        socks4 -> {mimicsocks_remote_socks, []};
+        socks  -> {mimicsocks_remote_socks, []};
+        http -> {mimicsocks_remote_http, []};
+        {relay, {RelayIp, RelayPort}} ->
+            {mimicsocks_remote_relay, [RelayIp, RelayPort]};
+        {relay, ProxyName} when is_atom(ProxyName) ->
+            {RelayIp, RelayPort} = mimicsocks_cfg:get_value(ProxyName, server),
+            {mimicsocks_remote_relay, [RelayIp, RelayPort]}
     end.

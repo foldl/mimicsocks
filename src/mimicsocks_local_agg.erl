@@ -51,8 +51,15 @@ callback_mode() ->
        ).
 
 %% callback funcitons
-init([reverse | Args]) ->
-    init0(mimicsocks_wormhole_remote, init, Args);
+init([reverse, RemoteIp, RemotePort, Key]) ->
+    RemoteServerArgs = [RemoteIp, RemotePort, mimicsocks_local_agg, {agg, self()}],
+    RemoteMain = #{
+        start => {mimicsocks_tcp_listener, start_link, [RemoteServerArgs]},
+        restart => permanent,
+        shutdown => brutal_kill
+    },
+    supervisor:start_child(mimicsocks_sup, RemoteMain),
+    init0(mimicsocks_wormhole_remote, init, [Key]);
 init(Args) ->
     init0(mimicsocks_wormhole_local, forward, Args).
 

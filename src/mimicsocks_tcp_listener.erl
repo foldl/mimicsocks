@@ -14,6 +14,7 @@ init([Ip, Port, Module, Args]) ->
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->
             case Args of
+                {agg, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, Pid]);
                 {agg, Args10} ->
                     {ok, Pid} = Module:start_link(Args10),
                     accept_loop2(Listen_socket, [Module, Pid]);
@@ -39,6 +40,16 @@ accept_loop2(LSock, [Module, Pid]) ->
         {ok, Socket} ->
             ok = inet:setopts(Socket, [{linger, {true, 10}}]),
             Module:accept(Pid, Socket),
+            accept_loop2(LSock, [Module, Pid]);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+accept_loop3(LSock, [Module, Pid]) ->
+    case gen_tcp:accept(LSock) of
+        {ok, Socket} ->
+            ok = inet:setopts(Socket, [{linger, {true, 10}}]),
+            Module:accept2(Pid, Socket),
             accept_loop2(LSock, [Module, Pid]);
         {error, Reason} ->
             {error, Reason}
