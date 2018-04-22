@@ -29,7 +29,6 @@ accept(Pid, Socket) ->
     Pid ! {accept, Socket}.
 
 accept2(Pid, Socket) ->
-    io:format("~p~n", [{Pid, Socket}]),
     ok = gen_tcp:controlling_process(Socket, Pid),
     Pid ! {accept2, Socket}.
 

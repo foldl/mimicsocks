@@ -51,7 +51,7 @@ init([Type]) ->
     end,
     Children = lists:flatten(ChildRemote ++ ChildLocal),
 
-    SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
+    SupFlags = #{strategy => one_for_one, intensity => 5, period => 5},
     ChildSpecs = lists:zipwith(
         fun (Child, Id) -> maps:put(id, Id, Child) end, 
         Children, lists:seq(1, length(Children))),
