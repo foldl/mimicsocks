@@ -115,7 +115,8 @@ create_local_child1(LocalAddresses, Server) ->
     OtherPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
     {Handler, HandlerArgs} = get_handler_cfg(Server),
 
-    case sets:is_element(RemoteIp, LocalAddresses) of
+    case (not sets:is_element(RemoteIp, LocalAddresses)) 
+         or (RemoteIp == {127,0,0,1}) of
         true -> 
             RemoteArgs = [RemoteIp, RemotePort, OtherPorts, Key, Handler, HandlerArgs],
             #{

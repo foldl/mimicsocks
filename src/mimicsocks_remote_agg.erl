@@ -51,7 +51,7 @@ socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 init([Key, HandlerMod, HandlerArgs]) ->
-    case mimicsocks_wormhole_remote:start_link([self() | Key]) of
+    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
         {ok, Channel} ->
             {ok, init, #state{handler_mod = HandlerMod,
                               handler_args = HandlerArgs,
