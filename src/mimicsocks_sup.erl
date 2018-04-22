@@ -51,7 +51,7 @@ init([Type]) ->
     end,
     Children = lists:flatten(ChildRemote ++ ChildLocal),
 
-    SupFlags = #{strategy => one_for_one, intensity => 5, period => 5},
+    SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
     ChildSpecs = lists:zipwith(
         fun (Child, Id) -> maps:put(id, Id, Child) end, 
         Children, lists:seq(1, length(Children))),
@@ -112,11 +112,12 @@ create_local_child0(LocalAddresses, Server) ->
 create_local_child1(LocalAddresses, Server) ->
     {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, wormhole_remote),
     Key = mimicsocks_cfg:get_value(Server, key),
+    OtherPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
     {Handler, HandlerArgs} = get_handler_cfg(Server),
 
     case sets:is_element(RemoteIp, LocalAddresses) of
         true -> 
-            RemoteArgs = [reverse, RemoteIp, RemotePort, Key, Handler, HandlerArgs],
+            RemoteArgs = [RemoteIp, RemotePort, OtherPorts, Key, Handler, HandlerArgs],
             #{
                 start => {mimicsocks_remote_agg, start_link, [RemoteArgs]},
                 restart => permanent,
@@ -161,13 +162,14 @@ create_remote_child1(LocalAddresses, Server) ->
     {RemoteIp, RemotePort} = mimicsocks_cfg:get_value(Server, wormhole_remote),
     Key = mimicsocks_cfg:get_value(Server, key),
     ExtraPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
-    LocalArgs = [reverse, RemoteIp, RemotePort, Key],
+    LocalArgs = [Key],
 
     case sets:is_element(RemoteIp, LocalAddresses) of
         true ->             
-            LocalServerArgs = [Ip, Port, mimicsocks_local_agg, {agg, LocalArgs}],
-            Server = #{
-                start => {mimicsocks_tcp_listener, start_link, [LocalServerArgs]},
+            RemoteServerArgs = {[{Ip, Port}, {RemoteIp, RemotePort}], 
+                                 mimicsocks_local_agg, [accept, accept2], LocalArgs},
+            ServerCfg = #{
+                start => {mimicsocks_tcp_listener, start_link, [RemoteServerArgs]},
                 restart => permanent,
                 shutdown => brutal_kill
             },
@@ -177,7 +179,7 @@ create_remote_child1(LocalAddresses, Server) ->
                 restart => permanent,
                 shutdown => brutal_kill
             } || APort <- ExtraPorts],
-            [Server | HoWorkers];
+            [ServerCfg | HoWorkers];
         _ -> []
     end.
 

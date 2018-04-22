@@ -51,17 +51,25 @@ socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 init([Key, HandlerMod, HandlerArgs]) ->
-    init0(mimicsocks_wormhole_remote, init, [Key], HandlerMod, HandlerArgs).
-
-init0(Mod, InitState, Args, HandlerMod, HandlerArgs) ->
-    case Mod:start_link([self() | Args]) of
+    case mimicsocks_wormhole_remote:start_link([self() | Key]) of
         {ok, Channel} ->
-            {ok, InitState, #state{handler_mod = HandlerMod,
+            {ok, init, #state{handler_mod = HandlerMod,
                               handler_args = HandlerArgs,
+                              wormhole = mimicsocks_wormhole_remote,
                               t_i2p = ets:new(tablei2p, []),
                               t_p2i = ets:new(tablep2i, []),
-                              channel = Channel,
-                              wormhole = Mod}};
+                              channel = Channel}};
+        {error, Reason} -> {stop, Reason}
+    end;
+init([RemoteIp, RemotePort, OtherPorts, Key, HandlerMod, HandlerArgs]) ->
+    case mimicsocks_wormhole_local:start_link([self(), RemoteIp, RemotePort, OtherPorts, Key]) of
+        {ok, Channel} ->
+            {ok, forward, #state{handler_mod = HandlerMod,
+                              handler_args = HandlerArgs,
+                              wormhole = mimicsocks_wormhole_local,
+                              t_i2p = ets:new(tablei2p, []),
+                              t_p2i = ets:new(tablep2i, []),
+                              channel = Channel}};
         {error, Reason} -> {stop, Reason}
     end.
 
@@ -124,9 +132,10 @@ handle_info(Info, StateName, State) ->
 
 terminate(_Reason, _StateName, #state{channel = Channel,
                                       handler_mod = Mod,
+                                      wormhole = W,
                                       t_i2p = Ti2p,
                                       t_p2i = Tp2i}) ->
-    (catch mimicsocks_wormhole_remote:stop(Channel)),
+    (catch W:stop(Channel)),
     ets:foldl(fun (Pid, _) -> (catch Mod:stop(Pid)) end, 0, Ti2p),
     ets:delete(Ti2p),
     ets:delete(Tp2i),
@@ -143,6 +152,7 @@ handle_cmd(?AGG_CMD_NOP, State) -> State;
 handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
                                              handler_mod = Module,
                                              handler_args = Args,
+                                             wormhole = W,
                                              channel = Channel} = State) ->
     case ets:lookup(Ti2p, Id) of
         [{Id, Pid}] ->
@@ -150,7 +160,7 @@ handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
             (catch Module:stop(Pid));
         _ -> ok
     end,
-    mimicsocks_wormhole_remote:suspend_mimic(Channel, 5000),
+    W:suspend_mimic(Channel, 5000),
     {ok, NewPid} = Module:start_link([self() | Args]),
     unlink(NewPid),
     erlang:monitor(process, NewPid),

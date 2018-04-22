@@ -7,7 +7,7 @@
 -behaviour(gen_statem).
 
 % api
--export([start_link/1, socket_ready/2, suspend_mimic/2]).
+-export([start_link/1, recv/2, socket_ready/2, suspend_mimic/2]).
 
 % callbacks
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
@@ -52,6 +52,8 @@ start_link(Args) ->
 socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
     gen_tcp:controlling_process(LSock, Pid),
     gen_statem:cast(Pid, {socket_ready, LSock}).
+
+recv(Pid, Data) -> Pid ! {recv, self(), Data}.
 
 suspend_mimic(Pid, Duration) -> Pid ! {suspend_mimic, Duration}.
 

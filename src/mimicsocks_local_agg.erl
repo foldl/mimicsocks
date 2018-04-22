@@ -7,7 +7,7 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/1, stop/1, accept/2, socket_ready/2]).
+-export([start_link/1, stop/1, accept/2, accept2/2, socket_ready/2]).
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
 -import(mimicsocks_wormhole_local, [show_sock/1]).
@@ -28,6 +28,11 @@ accept(Pid, Socket) ->
     ok = gen_tcp:controlling_process(Socket, Pid),
     Pid ! {accept, Socket}.
 
+accept2(Pid, Socket) ->
+    io:format("~p~n", [{Pid, Socket}]),
+    ok = gen_tcp:controlling_process(Socket, Pid),
+    Pid ! {accept2, Socket}.
+
 socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
     gen_tcp:controlling_process(LSock, Pid),
     gen_statem:cast(Pid, {socket_ready, LSock}).
@@ -40,55 +45,50 @@ callback_mode() ->
 -record(state,
         {
             channel,
-
+            wormhole,
             t_s2i,
             t_i2s,
-
-            wormhole,
 
             buf = <<>>
         }
        ).
 
 %% callback funcitons
-init([reverse, RemoteIp, RemotePort, Key]) ->
-    RemoteServerArgs = [RemoteIp, RemotePort, mimicsocks_local_agg, {agg, self()}],
-    RemoteMain = #{
-        start => {mimicsocks_tcp_listener, start_link, [RemoteServerArgs]},
-        restart => permanent,
-        shutdown => brutal_kill
-    },
-    supervisor:start_child(mimicsocks_sup, RemoteMain),
-    init0(mimicsocks_wormhole_remote, init, [Key]);
-init(Args) ->
-    init0(mimicsocks_wormhole_local, forward, Args).
-
-init0(Mod, InitState, Args) ->
-    case Mod:start_link([self() | Args]) of
+init([Key]) ->
+    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
         {ok, Channel} ->
-            {ok, InitState, #state{channel = Channel,
+            {ok, init, #state{wormhole = mimicsocks_wormhole_remote,
+                              t_i2s = ets:new(tablei2s, []),
+                              t_s2i = ets:new(tables2i, []),
+                              channel = Channel}};
+        {error, Reason} -> {stop, Reason}
+    end;
+init(Args) ->
+    case mimicsocks_wormhole_local:start_link([self() | Args]) of
+        {ok, Channel} ->
+            {ok, init, #state{channel = Channel,
+                      wormhole = mimicsocks_wormhole_local,
                       t_i2s = ets:new(tablei2s, []),
-                      t_s2i = ets:new(tables2i, []),
-                      wormhole = Mod
+                      t_s2i = ets:new(tables2i, [])
                       }};
         {error, Reason} -> {stop, Reason}
     end.
 
-init(cast, {socket_ready, Socket}, #state{channel = Channel, wormhole = Mod} = State) when is_port(Socket) ->
-    Mod:socket_ready(Channel, Socket),
+init(info, {accept2, Socket}, #state{channel = Channel} = State) ->
+    mimicsocks_wormhole_remote:socket_ready(Channel, Socket),
     {next_state, forward, State};
 init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 forward(info, Info, State) -> handle_info(Info, forward, State).
 
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
-                                                 channel = Channel, wormhole = Mod} = State) ->
+                                                 channel = Channel, wormhole = W} = State) ->
     case {inet:setopts(Socket, [{active, true}]), inet:peername(Socket)} of
         {ok, {ok, {_Addr, Port}}} ->
             ets:insert(Ti2s, {Port, Socket}),
             ets:insert(Ts2i, {Socket, Port}),
-            Mod:suspend_mimic(Channel, 5000),
-            Mod:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>);
+            W:suspend_mimic(Channel, 5000),
+            W:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>);
         Error -> 
             ?ERROR("can't get port ~p~n", [Error]),
             gen_tcp:close(Socket)
@@ -131,9 +131,9 @@ handle_info(Info, _StateName, State) ->
     ?WARNING("unexpected msg: ~p", [Info]),
     {keep_state, State}.
 
-terminate(_Reason, _StateName, #state{channel = Channel, t_i2s = T1, t_s2i = T2, wormhole = Mod} =
+terminate(_Reason, _StateName, #state{channel = Channel, t_i2s = T1, t_s2i = T2, wormhole = W} =
             _State) ->
-    (catch Mod:stop(Channel)),
+    (catch W:stop(Channel)),
     (catch ets:delete(T1)),
     (catch ets:delete(T2)),
     normal.

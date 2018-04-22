@@ -5,7 +5,15 @@
 -export([start_link/1]).
 
 start_link([_Ip, Port, Module | _T] = Args) when is_integer(Port), is_atom(Module)->
-    {ok, spawn_link(fun () -> init(Args) end)}.
+    {ok, spawn_link(fun () -> init(Args) end)};
+start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList) ->
+    {ok, Pid} = Module:start_link(Args10),
+    {ok, spawn_link(fun () -> 
+        lists:zipwith(fun ({Ip, Port}, F) ->
+            spawn_link(fun () -> init([Ip, Port, Module, {pid, F, Pid}]) end)
+        end, IpPortList, FList),
+        loop()
+      end)}.
 
 %% callbacks
 init([Ip, Port, Module, Args]) ->
@@ -14,6 +22,7 @@ init([Ip, Port, Module, Args]) ->
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->
             case Args of
+                {pid, F, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, F, Pid]);
                 {agg, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, Pid]);
                 {agg, Args10} ->
                     {ok, Pid} = Module:start_link(Args10),
@@ -45,12 +54,17 @@ accept_loop2(LSock, [Module, Pid]) ->
             {error, Reason}
     end.
 
-accept_loop3(LSock, [Module, Pid]) ->
+accept_loop3(LSock, [Module, F, Pid] = Args) ->
     case gen_tcp:accept(LSock) of
         {ok, Socket} ->
             ok = inet:setopts(Socket, [{linger, {true, 10}}]),
-            Module:accept2(Pid, Socket),
-            accept_loop2(LSock, [Module, Pid]);
+            Module:F(Pid, Socket),
+            accept_loop3(LSock, Args);
         {error, Reason} ->
             {error, Reason}
+    end.
+
+loop() ->
+    receive
+        _ -> loop()
     end.
