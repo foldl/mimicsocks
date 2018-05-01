@@ -47,6 +47,7 @@ callback_mode() ->
             wormhole,
             t_s2i,
             t_i2s,
+            key,
 
             buf = <<>>
         }
@@ -59,6 +60,7 @@ init([Key]) ->
             {ok, init, #state{wormhole = mimicsocks_wormhole_remote,
                               t_i2s = ets:new(tablei2s, []),
                               t_s2i = ets:new(tables2i, []),
+                              key = Key,
                               channel = Channel}};
         {error, Reason} -> {stop, Reason}
     end;
@@ -80,6 +82,21 @@ init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 forward(info, Info, State) -> handle_info(Info, forward, State).
 
+handle_info({accept2, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
+                                                 channel = Channel, key = Key,
+                                                 wormhole = mimicsocks_wormhole_remote} = State) ->
+    % clean-up
+    (catch mimicsocks_wormhole_remote:stop(Channel)),
+    (catch ets:delete_all_objects(Ti2s)),
+    (catch ets:delete_all_objects(Ts2i)),
+
+    % re-initialize
+    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
+        {ok, Channel} ->
+            mimicsocks_wormhole_remote:socket_ready(Channel, Socket),
+            {next_state, forward, State#state{channel = Channel, buf = <<>>}};
+        {error, Reason} -> {stop, Reason}
+    end;
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
                                                  channel = Channel, wormhole = W} = State) ->
     case {inet:setopts(Socket, [{active, true}]), inet:peername(Socket)} of

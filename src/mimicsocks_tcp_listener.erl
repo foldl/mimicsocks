@@ -7,8 +7,8 @@
 start_link([_Ip, Port, Module | _T] = Args) when is_integer(Port), is_atom(Module)->
     {ok, spawn_link(fun () -> init(Args) end)};
 start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList) ->
-    {ok, Pid} = Module:start_link(Args10),
     {ok, spawn_link(fun () -> 
+        {ok, Pid} = Module:start_link(Args10),
         lists:zipwith(fun ({Ip, Port}, F) ->
             spawn_link(fun () -> init([Ip, Port, Module, {pid, F, Pid}]) end)
         end, IpPortList, FList),
@@ -17,7 +17,7 @@ start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList)
 
 %% callbacks
 init([Ip, Port, Module, Args]) ->
-    process_flag(trap_exit, true),
+    % process_flag(trap_exit, true),
     Opts = [binary, {packet, raw}, {ip, Ip}, {backlog, 128}, {active, false}],
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->

@@ -7,7 +7,7 @@
 -behaviour(gen_statem).
 
 % api
--export([start_link/1, recv/2, socket_ready/2, suspend_mimic/2]).
+-export([start_link/1, stop/1, recv/2, socket_ready/2, suspend_mimic/2]).
 
 % callbacks
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
@@ -48,6 +48,8 @@
 
 start_link(Args) ->
     gen_statem:start_link(?MODULE, Args, []).
+
+stop(Pid) -> gen_statem:stop(Pid).
 
 socket_ready(Pid, LSock) when is_pid(Pid), is_port(LSock) ->
     gen_tcp:controlling_process(LSock, Pid),
