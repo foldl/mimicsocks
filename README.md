@@ -2,24 +2,51 @@
 
 [![Build Status](https://travis-ci.org/foldl/mimicsocks.svg?branch=master)](https://travis-ci.org/foldl/mimicsocks)
 
-Mimicsocks is just another TCP forwarder, relay, tunnel or proxy, inspired by Shadowsocks and stimulated by [1].
+Mimicsocks is a reversable TCP forwarder, relay, tunnel or proxy, inspired by Shadowsocks and stimulated by [1].
 
 查看[简体中文版](README.zh.md).
+
+## Scenario 1
+
+User programs connect to the local end to access services provided by different handlers.
 
 ```
                                                     handlers
 
-                                                   +--------+
-                                              +---->  http  <-->
-                                              |    +--------+
-                                              |
-+-----------+    wormhole    +------------+   |    +--------+
-|   local   <- - - - - - - - >   remote   <---+----> socks  <-->
+    Users                                          +--------+
+      +                                       +---->  http  <-->
+      |                                       |    +--------+
+      |                                       |
++-----v-----+    wormhole    +------------+   |    +--------+
+|   local   <+ + + + + + + + ^   remote   <--------> socks  <-->
 +-----------+                +------------+   |    +--------+
                                               |
                                               |    +--------+
                                               +----> relay  <-->
                                                    +--------+
+```
+
+## Scenario 2
+
+User programs connect to the remote end to access services provided by different handlers.
+
+```
++---------------------------------------+
+|                              intranet |
+|      handlers                         |
+|                                       |
+|     +--------+                        |                  Users
+|  <-->  http  <----+                   |                    +
+|     +--------+    |                   |                    |
+|                   |                   |                    |
+|     +--------+    |     +-----------+ |  wormhole    +-----v------+
+|  <--> socks  <---------->   local   <--+ + + + + + + ^   remote   |
+|     +--------+    |     +-----------+ |              +------------+
+|                   |                   |
+|     +--------+    |                   |
+|  <--> relay  <----+                   |
+|     +--------+                        |
++---------------------------------------+
 ```
 
 ## Features
@@ -67,6 +94,126 @@ a data handler. Mimicsocks has three handlers:
     Data can be forwarded to another mimicsocks to create a chain of proxies. Data can
     also be forwarded to your own socks5 or http proxy.
 
+## Get Started
+
+Take Windows as an example.
+
+1. Install Erlang/OTP 20.0 or newer (seriously).
+
+    Suppose it's installed in `C:\Program files\erl9.0`
+
+1. Download this package Erlang's lib directory: `C:\Program files\erl9.0\lib`.
+
+1. Start werl.exe, and build mimicsocks:
+
+    ```shell
+    Eshell V9.0  (abort with ^G)
+    1> cd("../lib/mimicsocks").
+    C:/Program files/erl9.0/lib/mimicsocks
+    ok
+    2> make:all().
+    ......
+    up_to_date
+    ```
+
+1. Config mimicsocks. 
+
+    See below for exmples. Note that both ends share the same config file.
+
+    Open `C:\Program files\erl9.0\lib\mimicsocks\priv\mimicsocks.cfg` and edit it:
+
+    ```erlang
+    {default, [   % name of this wormhole
+                ...
+                {handler, socks},        % socks, http, or relay (see below)
+                ...
+            ]
+    }.
+    ```
+
+    To use the relay handler, one can define another wormhole, then use it:
+    ```erlang
+    {default, [   % name of this wormhole
+                ...
+                {handler, {relay, another}},
+                ...
+            ]
+    }.
+    {another, [   % name of another wormhole
+                ...
+            ]
+    }.
+    ```
+
+    Or just relay to another address:
+    ```erlang
+    {default, [   % name of this wormhole
+                ...
+                {remote_handler, {relay, {Ip, Port}},
+                ...
+            ]
+    }.
+    ```
+
+1. Launch mimicsocks:
+
+    On remote & local machine:
+    ```shell
+    erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
+    ```
+
+    For aggregated ones, remote end should be started ahead of local end.
+
+## Configuration Examples
+
+### Scenario 1
+
+There is a server with IP address S0.S1.S2.S3, we want to use it as a socks proxy.
+
+We are in a intranet with IP address A0.A1.A2.A3, we want to use port 8888 as the entry point.
+
+```erlang
+{default, [   % name of this wormhole
+            {server, {{A0,A1,A2,A3}, 8888}},           % local end address
+            {wormhole_remote, {{S0,S1,S2,S3}, 9999}},  % remote end address
+            {wormhole, aggregated},                    % can be aggregated (RECOMMENDED) or distributed
+            {handler, socks},                          % socks, http, or relay
+            {wormhole_extra_ports, [9998]},   % extra ports on remote end for handover
+            {key, <<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>>}
+                    % possible key length: 128, 192, or 256 bits
+                    % use following code to generate a new key: 
+                    % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
+        ]
+}.
+```
+
+After mimicsocks is successfully started, set programs' socks proxy to A0.A1.A2.A3:8888.
+
+Note: port number can be chosen randomly.
+
+### Scenario 2
+
+We have a server with IP address S0.S1.S2.S3 and another Windows box in intranet with address A0.A1.A2.A3.
+We need to access Windows remote desktop from outside of this intranet.
+
+```erlang
+{default, [   % name of this wormhole
+            {reverse, true},                           % reverse proxy
+            {server, {{S0,S1,S2,S3}, 8888}},           % local end address
+            {wormhole_remote, {{S0,S1,S2,S3}, 9999}},  % remote end address
+            {wormhole, aggregated},                    % must be aggregated
+            {handler, {relay, {{A0,A1,A2,A3}, 3389}}}, % relay to remote desktop
+            {wormhole_extra_ports, [9998]},            % extra ports on remote end for handover
+            {key, <<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>>}
+                    % possible key length: 128, 192, or 256 bits
+                    % use following code to generate a new key: 
+                    % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
+        ]
+}.
+```
+
+After mimicsocks is successfully started, connect to S0.S1.S2.S3:8888 to access the remote desktop.
+
 ## Internals
 
 In each end of this wormhole (a.k.a mimicsocks), there is a list of nodes.
@@ -111,80 +258,6 @@ Mimicsocks has following nodes.
 
     This node does not need a A<sup>-1</sup> in the other end.
 
-## Get Started
-
-Take Windows as an example.
-
-1. Install Erlang/OTP 20.0 or newer (seriously).
-
-    Suppose it's installed in `C:\Program files\erl9.0`
-
-1. Download this package Erlang's lib directory: `C:\Program files\erl9.0\lib`.
-
-1. Start werl.exe, and build mimicsocks:
-
-    ```shell
-    Eshell V9.0  (abort with ^G)
-    1> cd("../lib/mimicsocks").
-    C:/Program files/erl9.0/lib/mimicsocks
-    ok
-    2> make:all().
-    ......
-    up_to_date
-    ```
-
-1. Config mimicsocks. Note that both ends share the same config file.
-
-    Open `C:\Program files\erl9.0\lib\mimicsocks\priv\mimicsocks.cfg` and edit it:
-
-    ```erlang
-    {default, [   % name of this wormhole
-                {local, {{127,0,0,1}, 8888}},   % local end address
-                {remote, {{127,0,0,1}, 9999}},  % remote end address
-                {wormhole, aggregated},         % can be aggregated (RECOMMENDED) or distributed
-                {remote_handler, socks},        % socks, http, or relay (see below)
-                {remote_extra_ports, [9998]},   % extra ports on remote end for handover
-                {key, <<41,186,113,221,126,106,146,106,246,112,85,183,56,79,159,
-                        111,44,174,51,120, 240,217,55,13,205,149,176,82,120,6,61,131>>}
-                        % possible key length: 128, 192, or 256 bits
-                        % use following code to generate a new key: 
-                        % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
-            ]
-    }.
-    ```
-
-    To use the relay handler, one can define another wormhole, then use it:
-    ```erlang
-    {default, [   % name of this wormhole
-                ...
-                {remote_handler, {relay, another}},
-                ...
-            ]
-    }.
-    {another, [   % name of another wormhole
-                ...
-            ]
-    }.
-    ```
-
-    Or just relay to another address:
-    ```erlang
-    {default, [   % name of this wormhole
-                ...
-                {remote_handler, {relay, {Ip, Port}},
-                ...
-            ]
-    }.
-    ```
-
-1. Launch mimicsocks:
-
-    On remote & local machine:
-    ```shell
-    erl -eval "application:ensure_all_started(mimicsocks)" -noshell -detached
-    ```
-
-    For aggregated ones, remote end should be started ahead of local end.
 ----
 ## License
 
