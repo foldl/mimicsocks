@@ -22,7 +22,9 @@ init([Ip, Port, Module, Args]) ->
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->
             case Args of
-                {pid, F, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, F, Pid]);
+                {pid, F, Pid} when is_pid(Pid) -> 
+                    link(Pid),
+                    accept_loop3(Listen_socket, [Module, F, Pid]);
                 {agg, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, Pid]);
                 {agg, Args10} ->
                     {ok, Pid} = Module:start_link(Args10),

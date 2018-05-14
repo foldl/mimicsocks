@@ -31,7 +31,7 @@ start_link(Config, Type) ->
     case sets:is_element(file, Set) of
         true ->
             LogFile = filename:join(code:priv_dir(mimicsocks), "log"),
-            error_logger:logfile({open, LogFile});
+            ok = error_logger:logfile({open, LogFile});
         _ -> ok
     end,
     error_logger:tty(true), % sets:is_element(tty, Set)),
@@ -51,7 +51,7 @@ init([Type]) ->
     end,
     Children = lists:flatten(ChildRemote ++ ChildLocal),
 
-    SupFlags = #{strategy => one_for_one, intensity => 5, period => 5},
+    SupFlags = #{strategy => one_for_one, intensity => 10, period => 1},
     ChildSpecs = lists:zipwith(
         fun (Child, Id) -> maps:put(id, Id, Child) end, 
         Children, lists:seq(1, length(Children))),
