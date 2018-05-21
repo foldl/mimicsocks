@@ -17,7 +17,6 @@ start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList)
 
 %% callbacks
 init([Ip, Port, Module, Args]) ->
-    % process_flag(trap_exit, true),
     Opts = [binary, {packet, raw}, {ip, Ip}, {backlog, 128}, {active, false}],
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->
@@ -40,6 +39,7 @@ accept_loop1(LSock, [Module, Args]) ->
         {ok, Socket} ->
             ok = inet:setopts(Socket, [{linger, {true, 10}}]),
             {ok, Pid} = Module:start_link(Args),
+            unlink(Pid),
             Module:socket_ready(Pid, Socket),
             accept_loop1(LSock, [Module, Args]);
         {error, Reason} ->
