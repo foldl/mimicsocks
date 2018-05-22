@@ -55,7 +55,7 @@ callback_mode() ->
 
 %% callback funcitons
 init([Key]) ->
-    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
+    case init_wormhole_remote(Key) of
         {ok, Channel} ->
             {ok, init, #state{wormhole = mimicsocks_wormhole_remote,
                               t_i2s = ets:new(tablei2s, []),
@@ -82,19 +82,29 @@ init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 forward(info, Info, State) -> handle_info(Info, forward, State).
 
-handle_info({accept2, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
-                                                 channel = Channel, key = Key,
-                                                 wormhole = mimicsocks_wormhole_remote} = State) ->
+% here, we use monitor but not fail-restart, because on some VPS, 
+% gen_tcp:listen fails during restart.
+handle_info({'DOWN', _Ref, process, Channel, _Reason}, _StateName, 
+            #state{channel = Channel, key = Key} = State) ->
     % clean-up
-    (catch mimicsocks_wormhole_remote:stop(Channel)),
-    (catch ets:delete_all_objects(Ti2s)),
-    (catch ets:delete_all_objects(Ts2i)),
+    clean_up(State),
 
     % re-initialize
-    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
-        {ok, Channel} ->
-            mimicsocks_wormhole_remote:socket_ready(Channel, Socket),
-            {next_state, forward, State#state{channel = Channel, buf = <<>>}};
+    case init_wormhole_remote(Key) of
+        {ok, NewChannel} ->
+            {next_state, init, State#state{channel = NewChannel, buf = <<>>}};
+        {error, Reason} -> {stop, Reason}
+    end;
+handle_info({accept2, Socket}, _StateName, #state{key = Key,
+                                                 wormhole = mimicsocks_wormhole_remote} = State) ->
+    % clean-up
+    clean_up(State),
+
+    % re-initialize
+    case init_wormhole_remote(Key) of
+        {ok, NewChannel} ->
+            mimicsocks_wormhole_remote:socket_ready(NewChannel, Socket),
+            {next_state, forward, State#state{channel = NewChannel, buf = <<>>}};
         {error, Reason} -> {stop, Reason}
     end;
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
@@ -158,6 +168,22 @@ code_change(_OldVsn, OldStateName, OldStateData, _Extra) ->
     {ok, OldStateName, OldStateData}.
 
 %helpers
+clean_up(#state{t_i2s = Ti2s, t_s2i = Ts2i,
+                    channel = Channel,
+                    wormhole = mimicsocks_wormhole_remote} = _State) ->
+    (catch mimicsocks_wormhole_remote:stop(Channel)),
+    (catch ets:delete_all_objects(Ti2s)),
+    (catch ets:delete_all_objects(Ts2i)).
+
+init_wormhole_remote(Key) ->
+    case mimicsocks_wormhole_remote:start_link([self(), Key]) of
+        {ok, Channel} ->
+            unlink(Channel),
+            erlang:monitor(process, Channel),
+            {ok, Channel};
+        {error, Reason} -> {stop, Reason}
+    end.
+
 send_data(Send, Id, List) when is_list(List) ->
     lists:foreach(fun (X) -> send_data(Send, Id, X) end, List);
 send_data(_Send, _Id, <<>>) -> ok;
