@@ -15,7 +15,7 @@ Mimicsocks is a reversable TCP forwarder, relay, tunnel or proxy, inspired by Sh
 * [Get Stated](#get-started)
 * [Configuration Exampels](#configuration-examples)
     * [Scenario 1](#scenario-1-1)
-    * [Scenario 1](#scenario-2-1)
+    * [Scenario 2](#scenario-2-1)
 * [Internals](#internals)
 * [License](#license)
 
