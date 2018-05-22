@@ -17,12 +17,13 @@ start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList)
 
 %% callbacks
 init([Ip, Port, Module, Args]) ->
-    % process_flag(trap_exit, true),
     Opts = [binary, {packet, raw}, {ip, Ip}, {backlog, 128}, {active, false}],
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->
             case Args of
-                {pid, F, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, F, Pid]);
+                {pid, F, Pid} when is_pid(Pid) -> 
+                    link(Pid),
+                    accept_loop3(Listen_socket, [Module, F, Pid]);
                 {agg, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, Pid]);
                 {agg, Args10} ->
                     {ok, Pid} = Module:start_link(Args10),
@@ -38,6 +39,7 @@ accept_loop1(LSock, [Module, Args]) ->
         {ok, Socket} ->
             ok = inet:setopts(Socket, [{linger, {true, 10}}]),
             {ok, Pid} = Module:start_link(Args),
+            unlink(Pid),
             Module:socket_ready(Pid, Socket),
             accept_loop1(LSock, [Module, Args]);
         {error, Reason} ->
