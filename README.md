@@ -8,73 +8,17 @@ Mimicsocks is a reversable TCP forwarder, relay, tunnel or proxy, inspired by Sh
 
 ## Table of Contents
 
-* [Scenario 1](#scenario-1)
-* [Scenario 2](#scenario-2)
-* [Features](#features)
 * [Overview](#overview)
+    * [Features](#features)
+    * [Scenario 1](#scenario-1)
+    * [Scenario 2](#scenario-2)
 * [Get Stated](#get-started)
 * [Configuration Exampels](#configuration-examples)
     * [Scenario 1](#scenario-1-1)
     * [Scenario 2](#scenario-2-1)
-* [Internals](#internals)
+* [Inside the Wormhole](#inside-the-wormhole)
 * [License](#license)
 
-## Scenario 1
-
-User programs connect to the local end to access services provided by different handlers.
-
-```
-                                                    handlers
-
-    Users                                          +--------+
-      +                                       +---->  http  <-->
-      |                                       |    +--------+
-      |                                       |
-+-----v-----+    wormhole    +------------+   |    +--------+
-|   local   <+ + + + + + + + ^   remote   <--------> socks  <-->
-+-----------+                +------------+   |    +--------+
-                                              |
-                                              |    +--------+
-                                              +----> relay  <-->
-                                                   +--------+
-```
-
-## Scenario 2
-
-User programs connect to the remote end to access services provided by different handlers.
-
-```
-+---------------------------------------+
-|                              intranet |
-|      handlers                         |
-|                                       |
-|     +--------+                        |                  Users
-|  <-->  http  <----+                   |                    +
-|     +--------+    |                   |                    |
-|                   |                   |                    |
-|     +--------+    |     +-----------+ |  wormhole    +-----v------+
-|  <--> socks  <---------->   local   <--+ + + + + + + ^   remote   |
-|     +--------+    |     +-----------+ |              +------------+
-|                   |                   |
-|     +--------+    |                   |
-|  <--> relay  <----+                   |
-|     +--------+                        |
-+---------------------------------------+
-```
-
-## Features
-
-* Chainable
-
-    Mimicsocks can be connected in series to create a multi-hop proxy or a likely-onion router.
-
-* Mimic
-
-    Mimicsocks manipluates packages size and delay, and makes baton handover randomly.
-
-* Simple
-
-    Mimicsocks is written in Erlang/OPT, no third-party dependencies.
 
 ## Overview
 
@@ -106,6 +50,73 @@ a data handler. Mimicsocks has three handlers:
     This relay forwards data to somewhere else specified by an IP address and port.
     Data can be forwarded to another mimicsocks to create a chain of proxies. Data can
     also be forwarded to your own socks5 or http proxy.
+
+### Features
+
+* Chainable
+
+    Mimicsocks can be connected in series to create a multi-hop proxy or a likely-onion router.
+
+* Mimic
+
+    Mimicsocks manipluates packages size and delay, and makes baton handover randomly.
+
+* Simple
+
+    Mimicsocks is written in Erlang/OPT, no third-party dependencies.
+
+Mimicsocks can be used for different purposes.
+
+### Scenario 1
+
+User programs connect to the local end to access services provided by different handlers.
+
+When users want extra privacy, or to access contents that are blocked by firewall, this scenario provides a solution.
+
+```
+                                                    handlers
+
+    Users                                          +--------+
+      +                                       +---->  http  <-->
+      |                                       |    +--------+
+      |                                       |
++-----v-----+    wormhole    +------------+   |    +--------+
+|   local   <+ + + + + + + + >   remote   <--------> socks  <-->
++-----------+                +------------+   |    +--------+
+                                              |
+                                              |    +--------+
+                                              +----> relay  <-->
+                                                   +--------+
+```
+
+### Scenario 2
+
+User programs connect to the remote end to access services provided by different handlers.
+
+When users want to access contents located in a intranet, this scenario provides a solution.
+
+WARNING: It should be noted that in this scenario, intranet services are exposed to the 
+outside without protection. Handlers in the intranet should have proper authentication 
+mechanism, or chain with another mimicsocks.
+
+```
++---------------------------------------+
+|                              intranet |
+|      handlers                         |
+|                                       |
+|     +--------+                        |                  Users
+|  <-->  http  <----+                   |                    +
+|     +--------+    |                   |                    |
+|                   |                   |                    |
+|     +--------+    |     +-----------+ |  wormhole    +-----v------+
+|  <--> socks  <---------->   local   <--+ + + + + + + >   remote   |
+|     +--------+    |     +-----------+ |              +------------+
+|                   |                   |
+|     +--------+    |                   |
+|  <--> relay  <----+                   |
+|     +--------+                        |
++---------------------------------------+
+```
 
 ## Get Started
 
@@ -191,11 +202,10 @@ We are in a intranet with IP address A0.A1.A2.A3, we want to use port 8888 as th
             {wormhole_remote, {{S0,S1,S2,S3}, 9999}},  % remote end address
             {wormhole, aggregated},                    % can be aggregated (RECOMMENDED) or distributed
             {handler, socks},                          % socks, http, or relay
-            {wormhole_extra_ports, [9998]},   % extra ports on remote end for handover
-            {key, <<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>>}
-                    % possible key length: 128, 192, or 256 bits
-                    % use following code to generate a new key: 
-                    % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
+            {wormhole_extra_ports, [9998]},            % extra ports on remote end for handover
+            {key, <<...>>}                             % possible key length: 128, 192, or 256 bits
+            % use following code to generate a new key: 
+            % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
         ]
 }.
 ```
@@ -217,17 +227,14 @@ We need to access Windows remote desktop from outside of this intranet.
             {wormhole, aggregated},                    % must be aggregated
             {handler, {relay, {{A0,A1,A2,A3}, 3389}}}, % relay to remote desktop
             {wormhole_extra_ports, [9998]},            % extra ports on remote end for handover
-            {key, <<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>>}
-                    % possible key length: 128, 192, or 256 bits
-                    % use following code to generate a new key: 
-                    % io:format("~p~n",[crypto:strong_rand_bytes(256 div 8)]).
+            {key, <<...>>}                             % possible key length: 128, 192, or 256 bits
         ]
 }.
 ```
 
 After mimicsocks is successfully started, connect to S0.S1.S2.S3:8888 to access the remote desktop.
 
-## Internals
+## Inside the Wormhole
 
 In each end of this wormhole (a.k.a mimicsocks), there is a list of nodes.
 Each node receives data in message format `{recv, From, Data}`, and pass
