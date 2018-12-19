@@ -17,7 +17,6 @@ Mimicsocks is a reversable TCP forwarder, relay, tunnel or proxy, inspired by Sh
     * [Scenario 1](#scenario-1-1)
     * [Scenario 2](#scenario-2-1)
 * [Inside the Wormhole](#inside-the-wormhole)
-* [License](#license)
 
 
 ## Overview
@@ -277,30 +276,6 @@ Mimicsocks has following nodes.
     Package delay may follow one of these distributions: constant, uniform, Gaussian or exponential.
 
     This node does not need a A<sup>-1</sup> in the other end.
-
-----
-## License
-
-The MIT License
-
-Copyright 2017-2018 @foldl.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in the
-Software without restriction, including without limitation the rights to use, copy,
-modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-and to permit persons to whom the Software is furnished to do so, subject to the
-following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----
 [1] [The Random Forest Based Detection of Shadowsock's Traffic](http://ieeexplore.ieee.org/document/8048116/)
