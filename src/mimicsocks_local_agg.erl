@@ -47,6 +47,7 @@ callback_mode() ->
             wormhole,
             t_s2i,
             t_i2s,
+            last_id = -1,
             key,
 
             buf = <<>>
@@ -108,18 +109,21 @@ handle_info({accept2, Socket}, _StateName, #state{key = Key,
         {error, Reason} -> {stop, Reason}
     end;
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
-                                                 channel = Channel, wormhole = W} = State) ->
-    case {inet:setopts(Socket, [{active, true}]), inet:peername(Socket)} of
-        {ok, {ok, {_Addr, Port}}} ->
+                                                 channel = Channel, wormhole = W,
+                                                 last_id = N} = State) ->
+    State20 = case inet:setopts(Socket, [{active, true}]) of
+        ok ->
+            Port = make_id(Ti2s, N, N),
             ets:insert(Ti2s, {Port, Socket}),
             ets:insert(Ts2i, {Socket, Port}),
             W:suspend_mimic(Channel, 5000),
-            W:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>);
-        Error -> 
-            ?ERROR("can't get port ~p~n", [Error]),
-            gen_tcp:close(Socket)
+            W:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>),
+            State#state{last_id = Port};
+        _Error -> 
+            gen_tcp:close(Socket),
+            State
     end,
-    {keep_state, State};
+    {keep_state, State20};
 handle_info({tcp, Socket, Bin}, _StateName, #state{t_s2i = Ts2i, channel = Channel} = State) ->
     case ets:lookup(Ts2i, Socket) of
         [{Socket, Id}] -> 
@@ -258,3 +262,13 @@ handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s} = State) ->
         _ -> ok
     end,
     State.
+
+make_id(Ti2s, N1, N0) ->
+    N2 = (N1 + 1) rem 65536,
+    true = (N2 =/= N0),
+    case ets:lookup(Ti2s, N2) of
+        [{_ID, _Socket}] -> 
+            make_id(Ti2s, N2, N0);
+        _ ->
+            N2
+    end.
