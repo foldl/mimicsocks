@@ -128,7 +128,7 @@ handle_info({tcp, Socket, Bin}, _StateName, #state{t_s2i = Ts2i, channel = Chann
     case ets:lookup(Ts2i, Socket) of
         [{Socket, Id}] -> 
             send_data(Channel, Id, Bin);
-        _ -> ?ERROR("socket (~s) not is db", [show_sock(Socket)])
+        _ -> ?ERROR("socket (~p) not in db", [show_sock(Socket)])
     end,
     {keep_state, State};
 handle_info({tcp_closed, Socket}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, channel = Channel} = State) ->
