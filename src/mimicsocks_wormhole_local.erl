@@ -61,7 +61,9 @@ callback_mode() ->
 
             cmd_ref,
             ho_timer,
-            ho_buf = <<>>
+            ho_buf = <<>>,
+
+            ping_timer
         }
        ).
 
@@ -69,16 +71,15 @@ callback_mode() ->
 init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
     process_flag(trap_exit, true),
     IVec = gen_ivec(),
-    Cipher = crypto:stream_init(aes_ctr, Key, IVec),
     ID0 = next_id(Key, IVec),
     HOID = next_id(Key, ID0),
 
     RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
     mimicsocks_inband_recv:set_key(RecvSink, Key),
-    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, Cipher]),
+    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, crypto:stream_init(aes_ctr, Key, IVec)]),
     
     {ok, SendSink} = mimicsocks_mimic:start_link([self(), identity, identity, iir]),
-    SendEncrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, Cipher]),
+    SendEncrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, crypto:stream_init(aes_ctr, Key, IVec)]),
     Send = mimicsocks_inband_send:start_link([SendEncrypt, self()]),
     mimicsocks_inband_send:set_key(Send, Key),
 

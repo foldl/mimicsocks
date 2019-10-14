@@ -79,13 +79,12 @@ wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
         <<IVec:?MIMICSOCKS_HELLO_SIZE/binary, ID0:?MIMICSOCKS_HELLO_SIZE/binary, Rem/binary>> ->
             case next_id(Key, IVec) of
                 ID0 ->
-                    Cipher = crypto:stream_init(aes_ctr, Key, IVec),
                     RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
                     mimicsocks_inband_recv:set_key(RecvSink, Key),
-                    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, Cipher]),
+                    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, crypto:stream_init(aes_ctr, Key, IVec)]),
                     
                     {ok, SendSink} = mimicsocks_mimic:start_link([self()]),
-                    SendCrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, Cipher]),
+                    SendCrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, crypto:stream_init(aes_ctr, Key, IVec)]),
                     Send = mimicsocks_inband_send:start_link([SendCrypt, self()]),
                     mimicsocks_inband_send:set_key(Send, Key),
                     Recv ! {recv, self(), Rem},
