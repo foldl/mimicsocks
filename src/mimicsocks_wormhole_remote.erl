@@ -75,16 +75,16 @@ init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
     All = <<Bin/binary, Buff/binary>>,
-    case All of 
+    case All of
         <<IVec:?MIMICSOCKS_HELLO_SIZE/binary, ID0:?MIMICSOCKS_HELLO_SIZE/binary, Rem/binary>> ->
             case next_id(Key, IVec) of
                 ID0 ->
                     RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
                     mimicsocks_inband_recv:set_key(RecvSink, Key),
-                    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, crypto:stream_init(aes_ctr, Key, IVec)]),
-                    
+                    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, mimicsocks_crypt:init_aes_ctr_dec(Key, IVec)]),
+
                     {ok, SendSink} = mimicsocks_mimic:start_link([self()]),
-                    SendCrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, crypto:stream_init(aes_ctr, Key, IVec)]),
+                    SendCrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, mimicsocks_crypt:init_aes_ctr_enc(Key, IVec)]),
                     Send = mimicsocks_inband_send:start_link([SendCrypt, self()]),
                     mimicsocks_inband_send:set_key(Send, Key),
                     Recv ! {recv, self(), Rem},
@@ -101,12 +101,12 @@ wait_ivec(cast, {local, Bin}, #state{buff = Buff, key = Key} = State) ->
                             send_inband = Send,
                             ho_id = HOID
                             }};
-                _ -> 
+                _ ->
                     create_close_timer(),
                     {next_state, bad_key, State}
             end;
         _ ->
-            
+
             {next_state, wait_ivec, State#state{buff = All}}
     end;
 wait_ivec(info, {tcp, _Socket, Bin}, StateData) ->
@@ -144,7 +144,7 @@ wait_ho_complete(info, {tcp, Socket, Bin}, #state{rsock2 = Socket, buff = Buff} 
 wait_ho_complete(info, {recv, SendSink, Bin}, #state{send_sink = SendSink,
                                                      rsock2 = Socket} = State) ->
     gen_tcp:send(Socket, Bin),
-    {keep_state, State}; 
+    {keep_state, State};
 wait_ho_complete(info, Msg, State) -> handle_info(Msg, wait_ho_complete, State).
 
 handle_info({ho_socket, Socket}, _StateName, #state{send_inband = SendInband, recv_inband = RecvInband,
@@ -155,20 +155,20 @@ handle_info({ho_socket, Socket}, _StateName, #state{send_inband = SendInband, re
     NewId = next_id(Key, Id),
     mimicsocks_cfg:deregister_remote(Id),
     mimicsocks_cfg:register_remote(NewId, self()),
-    {next_state, wait_sending_cmd, StateData#state{rsock2 = Socket, cmd_ref = Ref, 
+    {next_state, wait_sending_cmd, StateData#state{rsock2 = Socket, cmd_ref = Ref,
                                                    ho_id = NewId}};
 handle_info({inband_cmd, Pid, Cmds}, _StateName, #state{recv_sink = Pid} = State) ->
     parse_cmds(Cmds, self()),
     {keep_state, State};
 handle_info({recv, RecvSink, Data}, _StateName, #state{up_stream = Upstream, recv_sink = RecvSink} = State) ->
     Upstream ! {recv, self(), Data},
-    {keep_state, State}; 
+    {keep_state, State};
 handle_info({recv, SendSink, Data}, _StateName, #state{rsock = Socket, send_sink = SendSink} = State) ->
     gen_tcp:send(Socket, Data),
-    {keep_state, State}; 
+    {keep_state, State};
 handle_info({recv, Upstream, Data}, _StateName, #state{up_stream = Upstream, send = Send} = State) ->
     Send ! {recv, self(), Data},
-    {keep_state, State}; 
+    {keep_state, State};
 handle_info({tcp, Socket, Bin}, _StateName, #state{rsock = Socket, recv = Recv} = State) ->
     Recv ! {recv, self(), Bin},
     {keep_state, State};
@@ -196,7 +196,7 @@ terminate(_Reason, _StateName, #state{rsock=RSocket,
     (catch gen_tcp:close(RSocket)),
     (catch gen_tcp:close(RSocket2)),
     (catch Recv ! stop),
-    (catch Send ! stop), 
+    (catch Send ! stop),
     mimicsocks_cfg:deregister_remote(Id),
     ok.
 

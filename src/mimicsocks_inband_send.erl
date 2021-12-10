@@ -2,7 +2,7 @@
 %@author    foldl@outlook.com
 -module(mimicsocks_inband_send).
 
--export([start_link/1, stop/1, recv/2, set_key/2, 
+-export([start_link/1, stop/1, recv/2, set_key/2,
          recv_cmd/2, recv_cmd/3, get_buff/1, continue/1]).
 
 -include("mimicsocks.hrl").
@@ -13,12 +13,12 @@
     output,
     cmd_handler,
     key,
-    after_cmd,     % continue or hold_and_flush 
+    after_cmd,     % continue or hold_and_flush
     counter = 0,
     buff
 }).
 
-start_link([Output, Handler]) -> 
+start_link([Output, Handler]) ->
     spawn_link(fun() -> loop(#state{output = Output, cmd_handler = Handler}) end).
 
 stop(Pid) -> Pid ! stop.
@@ -29,7 +29,7 @@ set_key(Pid, Key) -> Pid ! {set_key, Key}.
 recv_cmd(Pid, Cmd) -> recv_cmd(Pid, Cmd, continue).
 continue(Pid) -> Pid ! continue.
 
-get_buff(Pid) -> 
+get_buff(Pid) ->
     This = self(),
     Ref = make_ref(),
     Pid ! {get_buff, This, Ref},
@@ -63,13 +63,13 @@ loop(#state{output = Output} = State) ->
                 _ -> ok
             end,
             loop(State#state{buff = undefined});
-        {recv, _From, Data} -> 
+        {recv, _From, Data} ->
             loop(loop_data(State, Data));
-        {set_key, Key} -> 
+        {set_key, Key} ->
             loop(State#state{key = Key});
         {send_cmd, Ref, Cmd, After} ->
             Key = State#state.key,
-            HMAC = crypto:hmac(sha, Key, Cmd, ?MIMICSOCKS_INBAND_HMAC),
+            HMAC = mimicsocks_crypt:hmac_sha(Key, Cmd, ?MIMICSOCKS_INBAND_HMAC),
             Output ! {recv, self(), <<HMAC/binary, Cmd/binary>>},
             NewState = case After of
                 continue -> State;

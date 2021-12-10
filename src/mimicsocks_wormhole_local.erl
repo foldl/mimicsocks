@@ -1,4 +1,4 @@
-%@doc    generalized communication channel 
+%@doc    generalized communication channel
 %@author foldl@outlook.com
 -module(mimicsocks_wormhole_local).
 
@@ -76,10 +76,10 @@ init([UpStream, ServerAddr, ServerPort, OtherPorts, Key | T]) ->
 
     RecvSink = mimicsocks_inband_recv:start_link([self(), self()]),
     mimicsocks_inband_recv:set_key(RecvSink, Key),
-    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, crypto:stream_init(aes_ctr, Key, IVec)]),
-    
+    Recv = mimicsocks_crypt:start_link(decrypt, [RecvSink, mimicsocks_crypt:init_aes_ctr_dec(Key, IVec)]),
+
     {ok, SendSink} = mimicsocks_mimic:start_link([self(), identity, identity, iir]),
-    SendEncrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, crypto:stream_init(aes_ctr, Key, IVec)]),
+    SendEncrypt = mimicsocks_crypt:start_link(encrypt, [SendSink, mimicsocks_crypt:init_aes_ctr_enc(Key, IVec)]),
     Send = mimicsocks_inband_send:start_link([SendEncrypt, self()]),
     mimicsocks_inband_send:set_key(Send, Key),
 
@@ -118,7 +118,7 @@ ho_initiated(info, {ho_socket, ok, RSock2}, #state{
     ?INFO("ho_initiated", []),
     mimicsocks_inband_recv:tapping(RecvInband, true),
     gen_tcp:send(RSock2, Id),
-    {next_state, ho_wait_r2l, 
+    {next_state, ho_wait_r2l,
                  StateData#state{rsock2 = RSock2, ho_buf = <<>>, ho_id = next_id(Key, Id)},
                  [{state_timeout, 3000, ho_wait_r2l}]};
 ho_initiated(info, {ho_socket, error, Reason}, #state{recv_inband = RecvInband} = StateData) ->
@@ -127,7 +127,7 @@ ho_initiated(info, {ho_socket, error, Reason}, #state{recv_inband = RecvInband} 
     {next_state, forward, StateData};
 ho_initiated(info, Msg, Data) -> handle_info(Msg, ho_initiated, Data).
 
-ho_wait_r2l(state_timeout, _, StateData) -> 
+ho_wait_r2l(state_timeout, _, StateData) ->
     {stop, {ho_wait_r2l, state_timeout}, StateData#state{ho_buf = <<"... truncated ...">>}};
 ho_wait_r2l(info, {inband, ho_r2l}, #state{recv = Recv, ho_buf = Buf,
                                                send_inband = SendInband,
@@ -189,7 +189,7 @@ handle_info({tcp, RSocket, Bin}, _StateName, #state{rsock = RSocket, recv = Recv
 handle_info({tcp_closed, RSocket}, _StateName, #state{rsock = RSocket} = State) ->
     {stop, remote_down, State};
 handle_info({recv, SendSink, Bin}, _StateName, #state{send_sink = SendSink, rsock = Socket} = State) ->
-    gen_tcp:send(Socket, Bin),    
+    gen_tcp:send(Socket, Bin),
     {keep_state, State};
 handle_info({recv, Output, Bin}, _StateName, #state{send = Send, up_stream = Output} = State) ->
     Send ! {recv, self(), Bin},
@@ -200,7 +200,7 @@ handle_info({recv, RecvSink, Bin}, _StateName, #state{recv_sink = RecvSink, up_s
 handle_info({suspend_mimic, Duration}, _StateName, #state{send_sink = SendSink} = State) ->
     mimicsocks_mimic:suspend(SendSink, Duration),
     {keep_state, State};
-handle_info(stop, _StateName, State) -> 
+handle_info(stop, _StateName, State) ->
     {stop, normal, State};
 handle_info(Info, _StateName, State) ->
     ?WARNING("unexpected msg: ~p", [Info]),
@@ -228,7 +228,7 @@ create_ho_timer(Ports) ->
 -else.
 create_ho_timer(Ports) ->
     case length(Ports) > 0 of
-        true -> timer:send_after((rand:uniform(10) + 3) * 60 * 1000, ho_timer);
+        true -> timer:send_after((rand:uniform(10) + 20) * 60 * 1000, ho_timer);
         _ -> {ok, undefined}
     end.
 -endif.
@@ -262,15 +262,15 @@ connect(ServerAddr, ServerPort, [{http_proxy, ProxyAddr, ProxyPort}]) ->
             Req = ["CONNECT ", ip_to_list(ServerAddr), ":", integer_to_list(ServerPort), " HTTP/1.1\r\n\r\n"],
             gen_tcp:send(Socket, Req),
             case wait_result(Socket) of
-                {ok, <<>>} -> 
+                {ok, <<>>} ->
                     inet:setopts(Socket, [{active, true}]),
                     {ok, Socket};
-                {ok, Remain} -> 
+                {ok, Remain} ->
                     self() ! {tcp, Socket, Remain},
                     inet:setopts(Socket, [{active, true}]),
                     {ok, Socket};
                 OtherError ->
-                    ?ERROR("~p~n", [OtherError]), 
+                    ?ERROR("~p~n", [OtherError]),
                     gen_tcp:close(Socket),
                     OtherError
             end;
@@ -280,9 +280,9 @@ connect(ServerAddr, ServerPort, _) ->
     gen_tcp:connect(ServerAddr, ServerPort, [{active, true} | ?REMOTE_TCP_OPTS]).
 
 ip_to_list(X) when is_list(X) -> X;
-ip_to_list({A,B,C,D}) -> 
+ip_to_list({A,B,C,D}) ->
     io_lib:format("~B.~B.~B.~B",[A,B,C,D]);
-ip_to_list({A,B,C,D,E,F,G,H}) -> 
+ip_to_list({A,B,C,D,E,F,G,H}) ->
     io_lib:format("~.16B.~.16B.~.16B.~.16B.~.16B.~.16B.~.16B.~.16B",[A,B,C,D,E,F,G,H]).
 
 wait_line(_Socket, _Acc, N) when N < 0 -> {error, timeout};
@@ -291,7 +291,7 @@ wait_line(Socket, Acc, N) ->
     after 50 -> ok
     end,
     case gen_tcp:recv(Socket, 0) of
-        {ok, Data} -> 
+        {ok, Data} ->
             All = <<Acc/binary, Data/binary>>,
             case binary:split(All, <<"\r\n\r\n">>) of
                 [_, Remain] -> {ok, Remain};
@@ -309,7 +309,7 @@ wait_result(Socket) ->
         X -> X
     end.
 
-next_id(Key, ID) -> crypto:hmac(sha, Key, ID, ?MIMICSOCKS_HELLO_SIZE).
+next_id(Key, ID) -> mimicsocks_crypt:hmac_sha(Key, ID, ?MIMICSOCKS_HELLO_SIZE).
 
 %@doc generate a IVEC using random algo in order to randomized entropy on IVEC
 gen_ivec() ->
@@ -317,7 +317,7 @@ gen_ivec() ->
     T = rand:uniform(256) - 1,
     case rand:uniform(3) of
         1 -> crypto:strong_rand_bytes(?MIMICSOCKS_HELLO_SIZE);
-        _ -> 
+        _ ->
             Q = 256 div rand:uniform(10),
             list_to_binary([(rand:uniform(Q) + T) rem 256 || _ <- L])
     end.

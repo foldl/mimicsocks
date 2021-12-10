@@ -15,7 +15,7 @@
     buff = <<>>
 }).
 
-start_link([Output, Handler]) -> 
+start_link([Output, Handler]) ->
     spawn_link(fun() -> loop(#state{output = Output, cmd_handler = Handler}) end).
 
 stop(Pid) -> Pid ! stop.
@@ -27,19 +27,19 @@ tapping(Pid, Flag) -> Pid ! {tapping, Flag}.
 search_cmds(Start, All, #state{output = Output, cmd_handler = Handler,
                      key = Key} = State) ->
     case All of
-        <<Head:Start/binary, HMAC:?MIMICSOCKS_INBAND_HMAC/binary, 
+        <<Head:Start/binary, HMAC:?MIMICSOCKS_INBAND_HMAC/binary,
             Cmds:?MIMICSOCKS_INBAND_PAYLOAD/binary, Rem/binary>> ->
-            case crypto:hmac(sha, Key, Cmds, ?MIMICSOCKS_INBAND_HMAC) of
+            case mimicsocks_crypt:hmac_sha(Key, Cmds, ?MIMICSOCKS_INBAND_HMAC) of
                 HMAC ->
                     Output ! {recv, self(), Head},
-                    Handler ! {inband_cmd, self(), Cmds},                   
+                    Handler ! {inband_cmd, self(), Cmds},
                     search_cmds(0, Rem, State);
                 _ ->
                     search_cmds(Start + 1, All, State)
             end;
         _ ->
             NextBuff = case Start > 0 of
-                true -> 
+                true ->
                     <<Msg:Start/binary, Rem10/binary>> = All,
                     Output ! {recv, self(), Msg},
                     Rem10;
@@ -63,9 +63,9 @@ loop(State) ->
         {tapping, false} ->
             State#state.output ! {recv, self(), State#state.buff},
             loop(State#state{tapping = false, buff = <<>>});
-        {recv, _From, Data} -> 
+        {recv, _From, Data} ->
             loop(loop_data(Data, State));
-        {set_key, Key} -> 
+        {set_key, Key} ->
             loop(State#state{key = Key});
         {flush, Ref, _From} ->
             State#state.output ! {flush, Ref, self()},
