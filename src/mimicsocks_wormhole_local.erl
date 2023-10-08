@@ -1,5 +1,5 @@
 %@doc    generalized communication channel
-%@author foldl@outlook.com
+%@author foldl
 -module(mimicsocks_wormhole_local).
 
 -include("mimicsocks.hrl").
@@ -7,7 +7,7 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/1, stop/1, recv/2, suspend_mimic/2]).
+-export([start_link/1, stop/1, recv/2, suspend_mimic/2, handover_now/1]).
 -export([init/1, callback_mode/0, terminate/3, code_change/4]).
 
 -export([report_disconn/2, show_sock/1, next_id/2]).
@@ -32,6 +32,8 @@ stop(Pid) -> gen_statem:stop(Pid).
 recv(Pid, Data) -> Pid ! {recv, self(), Data}.
 
 suspend_mimic(Pid, Duration) -> Pid ! {suspend_mimic, Duration}.
+
+handover_now(Pid) -> Pid ! handover_now.
 
 callback_mode() ->
     state_functions.
@@ -167,6 +169,14 @@ ho_wait_close(info, {tcp, Socket, Bin}, #state{rsock2 = Socket, recv = Recv} = S
     {keep_state, StateData};
 ho_wait_close(info, Msg, Data) -> handle_info(Msg, ho_wait_close, Data).
 
+handle_info(handover_now, _StateName, #state{ho_timer = HOTimer} = _StateData) ->
+    ?INFO("handover_now", []),
+    case HOTimer of
+        undefined -> ok;
+        _ -> timer:cancel(HOTimer)
+    end,
+    self() ! ho_timer,
+    keep_state_and_data;
 handle_info(ho_timer, _StateName, #state{addr = Addr, other_ports = OtherPorts, extra_args = Extra} = StateData) ->
     ?INFO("ho_timer", []),
     Port = choice(OtherPorts),

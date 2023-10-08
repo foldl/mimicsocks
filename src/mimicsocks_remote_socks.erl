@@ -1,6 +1,6 @@
 %@doc    a handler of mimicsocks_remote
 %        a super simple socks5 proxy
-%@author foldl@outlook.com
+%@author foldl
 -module(mimicsocks_remote_socks).
 
 -include("mimicsocks.hrl").
@@ -100,7 +100,7 @@ wait_auth(cast, {socket_ready, Sock}, State) ->
     {keep_state, State#state{local = Sock}};
 wait_auth(cast, {local, Bin}, State) ->
     Buffer = <<(State#state.buff)/binary, Bin/binary>>,
-    case decode_socks5_auth(Buffer) of 
+    case decode_socks5_auth(Buffer) of
         incomplete ->
             {next_state, wait_auth, State#state{buff = Buffer}, ?TIMEOUT};
         {?SOCKS5_VER, _, _, Rest} ->
@@ -118,11 +118,11 @@ wait_auth(timeout, _, State) ->
 wait_auth(info, Msg, StateData) -> handle_info(Msg, wait_auth, StateData).
 
 do_socks4(Buffer, State) ->
-    case decode_socks4_req(Buffer) of 
+    case decode_socks4_req(Buffer) of
         incomplete ->
             {next_state, wait_auth, State#state{buff = Buffer}, ?TIMEOUT};
         {?SOCKS4_VER, DestAddr, Host, Port, Rest} = _Socks4Req ->
-            case gen_tcp:connect(Host, Port, 
+            case gen_tcp:connect(Host, Port,
                                              [{active, true}, {packet, raw}, binary,
                                               {reuseaddr, true},
                                               {nodelay, true}]) of
@@ -152,8 +152,8 @@ wait_req(cast, {local, Bin}, State) ->
     case decode_socks5_req(Buffer) of
         incomplete ->
             {next_state, wait_req, State#state{buff = Buffer}, ?TIMEOUT};
-        {?SOCKS5_VER, AddrType, BinAddr, Addr, Port, Rest}->            
-            Target = case AddrType of 
+        {?SOCKS5_VER, AddrType, BinAddr, Addr, Port, Rest}->
+            Target = case AddrType of
                 ?SOCKS5_ATYP_DOM ->
                     AddrSize = size(BinAddr),
                     <<?SOCKS5_ATYP_DOM, AddrSize, BinAddr/binary, Port:16/big>>;
@@ -166,12 +166,12 @@ wait_req(cast, {local, Bin}, State) ->
                                               {reuseaddr, true},
                                               {nodelay, true}]) of
                 {ok, RSocket} ->
-                    ?INFO("Connected to remote ~p:~p for proxying", 
+                    ?INFO("Connected to remote ~p:~p for proxying",
                           [Addr, Port]),
                     gen_tcp:send(RSocket, Rest),
                     Socks5Rsp = <<?SOCKS5_VER:8, ?SOCKS5_REP_OK:8, ?SOCKS5_RESERVED_FIELD:8>>,
                     send_to_local(State#state.local, [Socks5Rsp, Target]),
-                    {next_state, data, 
+                    {next_state, data,
                      State#state{buff= <<>>, rsock = RSocket}};
                 {error, Reason} ->
                     ?ERROR("wait_req can't connect to remote: ~p, ~p~n", [{Addr, Port}, Reason]),
@@ -181,7 +181,7 @@ wait_req(cast, {local, Bin}, State) ->
             end;
         Error ->
             ?ERROR("wait_req with error: ~p~n", [Error]),
-            {stop, Error, State}            
+            {stop, Error, State}
     end;
 wait_req(timeout, _, State) ->
     ?ERROR("Client connection timeout: wait_req~n", []),
@@ -233,7 +233,7 @@ send_to_local(LSock, IoData) when is_port(LSock) ->
 
 decode_socks5_auth(<<Ver:8/big, _/binary>>) when Ver =/= ?SOCKS5_VER ->
     {error, {not_supported_version, Ver}};
-decode_socks5_auth(<<?SOCKS5_VER:8/big, NMethods:8/big, 
+decode_socks5_auth(<<?SOCKS5_VER:8/big, NMethods:8/big,
                      Methods:NMethods/binary, Rest/binary>>) ->
     {?SOCKS5_VER, NMethods, Methods, Rest};
 decode_socks5_auth(_) ->
@@ -243,9 +243,9 @@ decode_socks4_req(<<>>) -> incomplete;
 decode_socks4_req(<<?SOCKS4_VER, Rem/binary>>) -> decode_socks4_req0(Rem);
 decode_socks4_req(<<Ver, _/binary>>) -> {error, {not_supported_version, Ver}}.
 
-decode_socks4_req0(<<?SOCKS4_CMD_CONNECT, DestPort:16/big, DestAddr:4/binary, Rem/binary>>) -> 
+decode_socks4_req0(<<?SOCKS4_CMD_CONNECT, DestPort:16/big, DestAddr:4/binary, Rem/binary>>) ->
     case binary:split(Rem, <<0>>) of
-        [_USERID, More] -> 
+        [_USERID, More] ->
             case DestAddr of
                 % socks4a
                 <<0, 0, 0, X>> when X /= 0 ->
@@ -274,9 +274,9 @@ decode_socks5_req0(<<?SOCKS5_REQ_CONNECT, _>>) -> incomplete;
 decode_socks5_req0(<<?SOCKS5_REQ_CONNECT, _, Rem/binary>> = _Req) -> decode_socks5_req_conn(Rem);
 decode_socks5_req0(<<Cmd, _/binary>> = _Req) -> {error, {not_supported_command, Cmd}}.
 
-decode_socks5_req_conn(<<?SOCKS5_ATYP_V4, DestAddr:4/binary, DestPort:16/big, Rem/binary>>) -> 
+decode_socks5_req_conn(<<?SOCKS5_ATYP_V4, DestAddr:4/binary, DestPort:16/big, Rem/binary>>) ->
     {?SOCKS5_VER, ?SOCKS5_ATYP_V4, DestAddr, list_to_tuple(binary_to_list(DestAddr)), DestPort, Rem};
-decode_socks5_req_conn(<<?SOCKS5_ATYP_V6, DestAddr:16/binary, DestPort:16/big, Rem/binary>>) -> 
+decode_socks5_req_conn(<<?SOCKS5_ATYP_V6, DestAddr:16/binary, DestPort:16/big, Rem/binary>>) ->
     <<A1:16/big, A2:16/big, A3:16/big, A4:16/big, A5:16/big, A6:16/big, A7:16/big, A8:16/big>> = DestAddr,
     {?SOCKS5_VER, ?SOCKS5_ATYP_V6, DestAddr, {A1,A2,A3,A4,A5,A6,A7,A8}, DestPort, Rem};
 decode_socks5_req_conn(<<?SOCKS5_ATYP_DOM, DomLen, Domain:DomLen/binary, DestPort:16/big, Rem/binary>>) ->

@@ -1,7 +1,7 @@
 %@doc remote socket forwarding server
-%     
+%
 %     tcp traffic is either forwarded to a socks5 handler or relayed to another mimicsocks proxy
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_remote_agg).
 
 -include("mimicsocks.hrl").
@@ -96,7 +96,7 @@ handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel,
     {keep_state, NewState};
 handle_info({recv, Handler, Data}, _StateName, #state{handler_mod = Mod, channel = Channel, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of
-        [{Handler, ID}] -> 
+        [{Handler, ID}] ->
             % traffic control
             case proc_high(Channel) of
                 true ->
@@ -107,7 +107,7 @@ handle_info({recv, Handler, Data}, _StateName, #state{handler_mod = Mod, channel
             end;
         _ -> ok
     end,
-    {keep_state, State}; 
+    {keep_state, State};
 handle_info({recv, Handler, ID, Data} = Msg, _StateName, #state{handler_mod = Mod, channel = Channel} = State) ->
     case proc_low(Channel) of
         true ->
@@ -116,11 +116,11 @@ handle_info({recv, Handler, ID, Data} = Msg, _StateName, #state{handler_mod = Mo
         _ ->
             timer:send_after(20, Msg)
     end,
-    {keep_state, State}; 
-handle_info({'DOWN', _Ref, process, Handler, _Reason}, _StateName, 
+    {keep_state, State};
+handle_info({'DOWN', _Ref, process, Handler, _Reason}, _StateName,
             #state{t_i2p = Ti2p, t_p2i = Tp2i} = State) ->
     case ets:lookup(Tp2i, Handler) of
-        [{Handler, Id}] -> 
+        [{Handler, Id}] ->
             ets:match_delete(Tp2i, {Handler, '_'}),
             ets:match_delete(Ti2p, {Id, '_'});
         _ -> ok
@@ -170,7 +170,7 @@ handle_cmd({?AGG_CMD_NEW_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
 handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
                                                handler_mod = Mod} = State) ->
     case ets:lookup(Ti2p, Id) of
-        [{Id, Pid}] -> 
+        [{Id, Pid}] ->
             ets:match_delete(Tp2i, {Pid, '_'}),
             ets:match_delete(Ti2p, {Id, '_'}),
             (catch Mod:stop(Pid));
@@ -179,9 +179,9 @@ handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_p2i = Tp2i, t_i2p = Ti2p,
     State;
 handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2p = Ti2p} = State) ->
     case ets:lookup(Ti2p, Id) of
-        [{Id, Pid}] -> 
+        [{Id, Pid}] ->
             Pid ! {recv, self(), Data};
-        _ -> 
+        _ ->
             ?WARNING("invalid port id: ~p", [Id])
     end,
     State.

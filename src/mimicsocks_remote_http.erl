@@ -1,6 +1,6 @@
 %@doc    a handler of mimicsocks_remote
 %        a super simple http proxy
-%@author foldl@outlook.com
+%@author foldl
 -module(mimicsocks_remote_http).
 
 -include("mimicsocks.hrl").
@@ -68,11 +68,11 @@ wait_req(cast, {local, Bin}, State) ->
                                               {reuseaddr, true}, {nodelay, true}]) of
                 {ok, RSocket} ->
                     ?INFO("Connected to remote ~p:~p for proxying", [Host, Port]),
-                    case Method of 
+                    case Method of
                         <<"CONNECT">> -> send_to_local(State#state.local, <<"HTTP/1.1 200 OK\r\n\r\n">>);
                         _ -> gen_tcp:send(RSocket, [RequestLine, "\r\n", Headers])
                     end,
-                    {next_state, data, 
+                    {next_state, data,
                      State#state{buff= <<>>, rsock = RSocket}};
                 {error, Reason} ->
                     ?ERROR("wait_req can't connect to remote: ~p, ~p~n", [{Host, Port}, Reason]),
@@ -81,7 +81,7 @@ wait_req(cast, {local, Bin}, State) ->
             end;
         Error ->
             ?ERROR("wait_req with error: ~p~n", [Error]),
-            {stop, Error, State}            
+            {stop, Error, State}
     end;
 wait_req(info, Msg, StateData) -> handle_info(Msg, wait_req, StateData).
 
@@ -136,7 +136,7 @@ parse_req_line(Req) ->
     {match, [Scheme, Host, Port, Path]} = re:run(
         URL, "^((?<a>http|https)://)?(?<b>[^:/]+):?(?<c>\\d*)(?<d>/?.*)",
         [{capture, all_names, binary}]),
-    
+
     Port10 = get_port(Scheme, Port),
     Path10 = case Path of <<>> -> <<"/">>; _ -> Path end,
     RequestLine = erlang:iolist_to_binary([Method, " ", Path10, " ", Ver]),

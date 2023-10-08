@@ -1,5 +1,5 @@
 %@doc       a simple tcp server
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_tcp_listener).
 
 -export([start_link/1]).
@@ -7,7 +7,7 @@
 start_link([_Ip, Port, Module | _T] = Args) when is_integer(Port), is_atom(Module)->
     {ok, spawn_link(fun () -> init(Args) end)};
 start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList) ->
-    {ok, spawn_link(fun () -> 
+    {ok, spawn_link(fun () ->
         {ok, Pid} = Module:start_link(Args10),
         lists:zipwith(fun ({Ip, Port}, F) ->
             spawn_link(fun () -> init([Ip, Port, Module, {pid, F, Pid}]) end)
@@ -17,11 +17,11 @@ start_link({IpPortList, Module, FList, Args10} = _Args) when is_list(IpPortList)
 
 %% callbacks
 init([Ip, Port, Module, Args]) ->
-    Opts = [binary, {packet, raw}, {ip, Ip}, {backlog, 128}, {active, false}],
+    Opts = [binary, {packet, raw}, {ip, Ip}, {backlog, 128}, {active, false}, {reuseaddr, true}],
     case gen_tcp:listen(Port, Opts) of
         {ok, Listen_socket} ->
             case Args of
-                {pid, F, Pid} when is_pid(Pid) -> 
+                {pid, F, Pid} when is_pid(Pid) ->
                     link(Pid),
                     accept_loop3(Listen_socket, [Module, F, Pid]);
                 {agg, Pid} when is_pid(Pid) -> accept_loop3(Listen_socket, [Module, Pid]);

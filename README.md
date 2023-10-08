@@ -187,6 +187,12 @@ Take Windows as an example.
 
     For aggregated ones, remote end should be started ahead of local end.
 
+    It's recommended to use Erlang heart (see Issue #):
+    ```shell
+    export HEART_COMMAND="erl -eval 'application:ensure_all_started(mimicsocks)' -noshell -detached -heart"
+    `$HEART_COMMAND`
+    ```
+
 ## Configuration Examples
 
 ### Scenario 1

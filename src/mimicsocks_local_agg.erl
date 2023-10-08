@@ -1,5 +1,5 @@
 %doc    aggregated communication
-%author foldl@outlook.com
+%author foldl
 -module(mimicsocks_local_agg).
 
 -include("mimicsocks.hrl").
@@ -49,6 +49,7 @@ callback_mode() ->
             t_i2s,
             last_id = -1,
             key,
+            last_timer = undefined,
 
             buf = <<>>
         }
@@ -83,9 +84,9 @@ init(info, Msg, StateData) -> handle_info(Msg, init, StateData).
 
 forward(info, Info, State) -> handle_info(Info, forward, State).
 
-% here, we use monitor but not fail-restart, because on some VPS, 
+% here, we use monitor but not fail-restart, because on some VPS,
 % gen_tcp:listen fails during restart.
-handle_info({'DOWN', _Ref, process, Channel, _Reason}, _StateName, 
+handle_info({'DOWN', _Ref, process, Channel, _Reason}, _StateName,
             #state{channel = Channel, key = Key} = State) ->
     % clean-up
     clean_up(State),
@@ -110,7 +111,8 @@ handle_info({accept2, Socket}, _StateName, #state{key = Key,
     end;
 handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
                                                  channel = Channel, wormhole = W,
-                                                 last_id = N} = State) ->
+                                                 last_id = N,
+                                                 last_timer = LastTimer} = State) ->
     State20 = case inet:setopts(Socket, [{active, true}]) of
         ok ->
             Port = make_id(Ti2s, N, N),
@@ -118,22 +120,22 @@ handle_info({accept, Socket}, _StateName, #state{t_i2s = Ti2s, t_s2i = Ts2i,
             ets:insert(Ts2i, {Socket, Port}),
             W:suspend_mimic(Channel, 5000),
             W:recv(Channel, <<?AGG_CMD_NEW_SOCKET, Port:16/big>>),
-            State#state{last_id = Port};
-        _Error -> 
+            State#state{last_id = Port, last_timer = update_ho_timer(LastTimer)};
+        _Error ->
             gen_tcp:close(Socket),
             State
     end,
     {keep_state, State20};
 handle_info({tcp, Socket, Bin}, _StateName, #state{t_s2i = Ts2i, channel = Channel} = State) ->
     case ets:lookup(Ts2i, Socket) of
-        [{Socket, Id}] -> 
+        [{Socket, Id}] ->
             send_data(Channel, Id, Bin);
         _ -> ?ERROR("socket (~p) not in db", [show_sock(Socket)])
     end,
     {keep_state, State};
 handle_info({tcp_closed, Socket}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, channel = Channel} = State) ->
     case ets:lookup(Ts2i, Socket) of
-        [{Socket, ID}] -> 
+        [{Socket, ID}] ->
             Channel ! {recv, self(), <<?AGG_CMD_CLOSE_SOCKET, ID:16/big>>},
             ets:match_delete(Ts2i, {Socket, '_'}),
             ets:match_delete(Ti2s, {ID, '_'});
@@ -148,14 +150,17 @@ handle_info({recv, Channel, Bin}, _StateName, #state{channel = Channel, buf = Bu
     {keep_state, NewState};
 handle_info({tcp_error, Socket, _Reason}, _StateName, #state{t_s2i = Ts2i, t_i2s = Ti2s, channel = Channel} = State) ->
     case ets:lookup(Ts2i, Socket) of
-        [{Socket, ID}] -> 
+        [{Socket, ID}] ->
             Channel ! {recv, self(), <<?AGG_CMD_CLOSE_SOCKET, ID:16/big>>},
             ets:match_delete(Ts2i, {Socket, '_'}),
             ets:match_delete(Ti2s, {ID, '_'});
         _ -> ok
     end,
     {keep_state, State};
-handle_info(stop, _StateName, State) -> 
+handle_info(ho_timer, _StateName, #state{channel = Channel, wormhole = W} = State) ->
+    W:handover_now(Channel),
+    {keep_state, State#state{last_timer = undefined}};
+handle_info(stop, _StateName, State) ->
     {stop, normal, State};
 handle_info(Info, _StateName, State) ->
     ?WARNING("unexpected msg: ~p", [Info]),
@@ -249,26 +254,38 @@ handle_cmd({?AGG_CMD_NEW_SOCKET, _Id}, State) ->
     State;
 handle_cmd({?AGG_CMD_CLOSE_SOCKET, Id}, #state{t_s2i = Ts2i, t_i2s = Ti2s} = State) ->
     case ets:lookup(Ti2s, Id) of
-        [{ID, Socket}] -> 
+        [{ID, Socket}] ->
             ets:match_delete(Ts2i, {Socket, '_'}),
             ets:match_delete(Ti2s, {ID, '_'});
         _ -> ok
     end,
     State;
-handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s} = State) ->
+handle_cmd({?AGG_CMD_DATA, Id, Data}, #state{t_i2s = Ti2s, last_timer = LastTimer} = State) ->
     case ets:lookup(Ti2s, Id) of
-        [{Id, Socket}] -> 
+        [{Id, Socket}] ->
             gen_tcp:send(Socket, Data);
         _ -> ok
     end,
-    State.
+    State#state{last_timer = cancel_timer(LastTimer)}.
 
 make_id(Ti2s, N1, N0) ->
     N2 = (N1 + 1) rem 65536,
     true = (N2 =/= N0),
     case ets:lookup(Ti2s, N2) of
-        [{_ID, _Socket}] -> 
+        [{_ID, _Socket}] ->
             make_id(Ti2s, N2, N0);
         _ ->
             N2
     end.
+
+update_ho_timer(undefined) ->
+    {ok, TRef} = timer:send_after((rand:uniform(10) + 10) * 1000, ho_timer),
+    TRef;
+update_ho_timer(Old) ->
+    cancel_timer(Old),
+    update_ho_timer(undefined).
+
+cancel_timer(undefined) -> undefined;
+cancel_timer(Old) ->
+    timer:cancel(Old),
+    undefined.

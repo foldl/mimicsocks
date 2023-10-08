@@ -1,5 +1,5 @@
 %@doc       a application
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_app).
 
 -behaviour(application).

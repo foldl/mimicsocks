@@ -1,5 +1,5 @@
 %@doc    config server
-%@author foldl@outlook.com
+%@author foldl
 -module(mimicsocks_cfg).
 
 -include("mimicsocks.hrl").
@@ -10,7 +10,7 @@
 -export([register_remote/2, get_remote/1, deregister_remote/1]).
 
 % gen-server callback functions
--export([init/1, terminate/2, 
+-export([init/1, terminate/2,
          handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
 
 -record(state,
@@ -40,14 +40,14 @@ init([CfgFile]) ->
     Tid = ets:new(table, []),
     {ok, #state{cfg = Cfg, table = Tid}}.
 
-handle_call(get_all, _From, #state{cfg = Cfg} = State) -> 
+handle_call(get_all, _From, #state{cfg = Cfg} = State) ->
     {reply, Cfg, State};
 handle_call(list_servers, _From, #state{cfg = Cfg} = State) ->
     S = [element(1, X) || X <- Cfg],
     {reply, S, State};
 handle_call({get_server, Server}, _From, #state{cfg = Cfg} = State) ->
     S = proplists:get_value(Server, Cfg),
-    {reply, S, State};    
+    {reply, S, State};
 handle_call({get_value, Server, Key}, _From, #state{cfg = Cfg} = State) ->
     R = case proplists:get_value(Server, Cfg) of
         L when is_list(L) -> proplists:get_value(Key, L);

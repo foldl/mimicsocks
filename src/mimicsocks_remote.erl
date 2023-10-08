@@ -1,7 +1,7 @@
 %@doc remote socket forwarding server
-%     
+%
 %     tcp traffic is either forwarded to a socks5 handler or relayed to another mimicsocks proxy
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_remote).
 
 -include("mimicsocks.hrl").
@@ -62,10 +62,10 @@ forward(info, Msg, StateData) -> handle_info(Msg, forward, StateData).
 
 handle_info({recv, Channel, Data}, _StateName, #state{handler = Handler, channel = Channel} = State) ->
     Handler ! {recv, self(), Data},
-    {keep_state, State}; 
+    {keep_state, State};
 handle_info({recv, Handler, Data}, _StateName, #state{handler = Handler, channel = Channel} = State) ->
     Channel ! {recv, self(), Data},
-    {keep_state, State}; 
+    {keep_state, State};
 handle_info(Info, StateName, State) ->
     ?ERROR("unexpected ~p in state ~p", [Info, StateName]),
     {keep_state, State}.

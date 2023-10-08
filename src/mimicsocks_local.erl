@@ -1,6 +1,6 @@
 %@doc       local socket forwarding node
 %           local traffic is forwarded and handled by remote node
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_local).
 
 -include("mimicsocks.hrl").
@@ -60,7 +60,7 @@ forward(info, Msg, Data) -> handle_info(Msg, forward, Data).
 
 handle_info({recv, Channel, Data}, _StateName, #state{lsock = Socket, channel = Channel} = StateData) ->
     gen_tcp:send(Socket, Data),
-    {keep_state, StateData}; 
+    {keep_state, StateData};
 handle_info({tcp, Socket, Bin}, _StateName, #state{lsock = Socket, channel = Channel} = StateData) ->
     mimicsocks_wormhole_local:recv(Channel, Bin),
     {keep_state, StateData};

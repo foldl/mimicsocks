@@ -1,5 +1,5 @@
 %@doc       a relay handler for remote node
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_remote_relay).
 
 -export([start_link/1, stop/1, recv/2, active/2]).

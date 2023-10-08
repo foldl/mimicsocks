@@ -1,5 +1,5 @@
 %@doc        generalized communication channel
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_wormhole_remote).
 
 -include("mimicsocks.hrl").

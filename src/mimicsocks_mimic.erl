@@ -1,5 +1,5 @@
 %@doc       change the stat. characters of tcp packages
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_mimic).
 
 -behaviour(gen_server).
@@ -15,7 +15,7 @@
 
 -define(EPSILON, 1/1000000.0).
 
--record(state, 
+-record(state,
     {
         output,
         size_dist,      % identity, constant, uniform, gaussian
@@ -45,7 +45,7 @@ suspend(Pid, MilliSec) -> Pid ! {suspend, MilliSec}.
 
 start_link(Args) -> gen_server:start_link(?MODULE, Args, []).
 
-recv(Pid, Data) when is_binary(Data) -> 
+recv(Pid, Data) when is_binary(Data) ->
     Pid ! {recv, self(), Data};
 recv(Pid, Data) when is_list(Data) ->
     [recv(Pid, X) || X <- Data].
@@ -63,8 +63,8 @@ init([Output, SizeModel, DelayModel, Estimator]) ->
         output = Output,
         size_dist = SizeModel,
         delay_dist = DelayModel,
-        queue = queue:new(),     
-        total = 0,  
+        queue = queue:new(),
+        total = 0,
         create_t = T,
         last_recv_t = T,
         last_send_t = T,
@@ -92,12 +92,12 @@ handle_info({suspend, MilliSec}, State) ->
     handle_info0(flush, State#state{suspended = true});
 handle_info({change, SizeModel, DelayModel}, State) ->
     {noreply, State#state{size_dist = SizeModel, delay_dist = DelayModel}};
-handle_info(stop, State) -> 
+handle_info(stop, State) ->
     {stop, normal, State};
 handle_info(Info, #state{suspended = Suspended} = State) ->
     {noreply, NewState} = handle_info0(Info, State),
     case Suspended of
-        true -> 
+        true ->
             handle_info0(flush, NewState);
         _ ->
             case queue:is_empty(NewState#state.queue) of
@@ -125,12 +125,12 @@ handle_info0(flush, State) ->
 handle_info0({flush, N}, #state{output = Output, queue = Q, total = Total} = State) ->
     N2 = min(N, queue:len(Q)),
     Self = self(),
-    {NewQ, SendTotal} = 
+    {NewQ, SendTotal} =
         lists:foldl(fun (_, {AQueue, Acc}) ->
                         {{value, Bin}, Q2} = queue:out(AQueue),
                         Output ! {recv, Self, Bin},
                         {Q2, Acc + size(Bin)}
-                    end, {Q, 0}, 
+                    end, {Q, 0},
                     lists:seq(1, N2)),
     {noreply, State#state{queue = NewQ, total = Total - SendTotal}};
 handle_info0({schedule, Size}, State) ->
@@ -161,7 +161,7 @@ schedule_send(Size, #state{output = Output, queue = Q, total = Total} = State) -
         {{value, Bin}, Q2} ->
             SZ = size(Bin),
             case Size >= SZ of
-                true -> 
+                true ->
                     Output ! {recv, self(), Bin},
                     schedule_send(Size - SZ, State#state{queue = Q2, total = Total - SZ});
                 _ ->
@@ -173,21 +173,21 @@ schedule_send(Size, #state{output = Output, queue = Q, total = Total} = State) -
 
 schedule_delay(#state{delay_dist = identity} = _State) ->
     0;
-schedule_delay(#state{last_send_t = LastT, 
+schedule_delay(#state{last_send_t = LastT,
                 delay_esti = DelayEsti, delay_dist = constant} = _State) ->
     {Mean, _Var} = esti_get(DelayEsti),
     Mean + LastT - cur_tick();
-schedule_delay(#state{last_send_t = LastT, 
+schedule_delay(#state{last_send_t = LastT,
                 delay_esti = DelayEsti, delay_dist = uniform} = _State) ->
     {Mean, Var} = esti_get(DelayEsti),
     X = math:sqrt(12 * Var),
     Mean + rand:uniform() * X + LastT - cur_tick();
-schedule_delay(#state{last_send_t = LastT, 
+schedule_delay(#state{last_send_t = LastT,
                 delay_esti = DelayEsti, delay_dist = gaussian} = _State) ->
     {Mean, Var} = esti_get(DelayEsti),
     Z = rand:normal(Mean, Var),
-    LastT + Z - cur_tick();    
-schedule_delay(#state{last_send_t = LastT, 
+    LastT + Z - cur_tick();
+schedule_delay(#state{last_send_t = LastT,
                 delay_esti = DelayEsti, delay_dist = poission} = _State) ->
     % here, the delay between two packages follows exponential distribution
     % pdf(x) = lambda exp(-lambda * x), for x >= 0
@@ -195,7 +195,7 @@ schedule_delay(#state{last_send_t = LastT,
     % let's generate exponential distribution random variable by inverse transforming
     {Mean, _Var} = esti_get(DelayEsti),
     Z = - math:log(max(rand:uniform(), ?EPSILON)) * Mean,
-    LastT + Z - cur_tick().     
+    LastT + Z - cur_tick().
 
 schedule_size(#state{size_dist = identity, queue = Q} = _State) ->
     size(queue:head(Q));
@@ -271,7 +271,7 @@ welford_get(#welford_state{n = N, mean = Mean, m2 = M2} = _State) when N > 1 ->
     {Mean, M2 / (N - 1)};
 welford_get(#welford_state{mean = Mean} = _State) ->
     {Mean, 0}.
-    
+
 % -----------------------
 % IIR-based estimator
 % -----------------------
@@ -297,7 +297,7 @@ iir_run(X, #iir_state{mean = Mean, var = Var} = _State) ->
 
 iir_get(#iir_state{mean = Mean, var = Var} = _State) ->
     {Mean, Var}.
-    
+
 choice(L) ->
     Len = length(L),
     lists:nth(rand:uniform(Len), L).

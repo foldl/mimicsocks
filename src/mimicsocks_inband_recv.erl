@@ -1,5 +1,5 @@
 %@doc       inband transmission module
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_inband_recv).
 
 -export([start_link/1, stop/1, recv/2, set_key/2, tapping/2]).

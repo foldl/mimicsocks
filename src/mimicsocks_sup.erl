@@ -1,5 +1,5 @@
 %@doc       the supervisor
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_sup).
 -behaviour(supervisor).
 
@@ -53,7 +53,7 @@ init([Type]) ->
 
     SupFlags = #{strategy => one_for_one, intensity => 10, period => 1},
     ChildSpecs = lists:zipwith(
-        fun (Child, Id) -> maps:put(id, Id, Child) end, 
+        fun (Child, Id) -> maps:put(id, Id, Child) end,
         Children, lists:seq(1, length(Children))),
     {ok, {SupFlags, ChildSpecs}}.
 
@@ -67,7 +67,7 @@ list_addrs() ->
 %@doc create child spec for local node
 create_local_child(LocalAddresses, Server) ->
     case mimicsocks_cfg:get_value(Server, reverse) of
-        true -> 
+        true ->
             aggregated = mimicsocks_cfg:get_value(Server, wormhole),
             create_local_child1(LocalAddresses, Server);
         _    -> create_local_child0(LocalAddresses, Server)
@@ -75,7 +75,7 @@ create_local_child(LocalAddresses, Server) ->
 
 create_remote_child(LocalAddresses, Server) ->
     case mimicsocks_cfg:get_value(Server, reverse) of
-        true -> 
+        true ->
             aggregated = mimicsocks_cfg:get_value(Server, wormhole),
             create_remote_child1(LocalAddresses, Server);
         _    -> create_remote_child0(LocalAddresses, Server)
@@ -89,7 +89,7 @@ create_local_child0(LocalAddresses, Server) ->
     LocalProxy = mimicsocks_cfg:get_value(Server, local_proxy),
     LocalArgs = [RemoteIp, RemotePort, OtherPorts, Key, LocalProxy],
     case sets:is_element(Ip, LocalAddresses) of
-        true -> 
+        true ->
             case mimicsocks_cfg:get_value(Server, wormhole) of
                 aggregated ->
                     LocalServerArgs = [Ip, Port, mimicsocks_local_agg, {agg, LocalArgs}],
@@ -115,9 +115,9 @@ create_local_child1(LocalAddresses, Server) ->
     OtherPorts = mimicsocks_cfg:get_value(Server, wormhole_extra_ports),
     {Handler, HandlerArgs} = get_handler_cfg(Server),
 
-    case (not sets:is_element(RemoteIp, LocalAddresses)) 
+    case (not sets:is_element(RemoteIp, LocalAddresses))
          or (RemoteIp == {127,0,0,1}) of
-        true -> 
+        true ->
             RemoteArgs = [RemoteIp, RemotePort, OtherPorts, Key, Handler, HandlerArgs],
             #{
                 start => {mimicsocks_remote_agg, start_link, [RemoteArgs]},
@@ -138,9 +138,9 @@ create_remote_child0(LocalAddresses, Server) ->
                 aggregated -> mimicsocks_remote_agg;
                 _ -> mimicsocks_remote
     end,
-        
+
     case sets:is_element(RemoteIp, LocalAddresses) of
-        true -> 
+        true ->
             RemoteArgs = [Key, Handler, HandlerArgs],
             RemoteServerArgs = [RemoteIp, RemotePort, Mod, RemoteArgs],
             RemoteMain = #{
@@ -149,7 +149,7 @@ create_remote_child0(LocalAddresses, Server) ->
                 shutdown => brutal_kill
             },
             HoWorkers = [#{
-                start => {mimicsocks_tcp_listener, start_link, 
+                start => {mimicsocks_tcp_listener, start_link,
                           [[RemoteIp, APort, mimicsocks_remote_ho, []]]},
                 restart => permanent,
                 shutdown => brutal_kill
@@ -166,8 +166,8 @@ create_remote_child1(LocalAddresses, Server) ->
     LocalArgs = [Key],
 
     case sets:is_element(RemoteIp, LocalAddresses) of
-        true ->             
-            RemoteServerArgs = {[{Ip, Port}, {RemoteIp, RemotePort}], 
+        true ->
+            RemoteServerArgs = {[{Ip, Port}, {RemoteIp, RemotePort}],
                                  mimicsocks_local_agg, [accept, accept2], LocalArgs},
             ServerCfg = #{
                 start => {mimicsocks_tcp_listener, start_link, [RemoteServerArgs]},
@@ -175,7 +175,7 @@ create_remote_child1(LocalAddresses, Server) ->
                 shutdown => brutal_kill
             },
             HoWorkers = [#{
-                start => {mimicsocks_tcp_listener, start_link, 
+                start => {mimicsocks_tcp_listener, start_link,
                           [[RemoteIp, APort, mimicsocks_remote_ho, []]]},
                 restart => permanent,
                 shutdown => brutal_kill

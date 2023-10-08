@@ -1,5 +1,5 @@
 %@doc       some tests
-%@author    foldl@outlook.com
+%@author    foldl
 -module(mimicsocks_test).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -31,7 +31,7 @@ send_and_wait(Send, Msg) ->
     receive
         Msg -> ok
     after
-        10 -> 
+        10 ->
             Buf = crypto:strong_rand_bytes(rand:uniform(20) + 5),
             mimicsocks_inband_send:recv(Send, Buf),
             send_and_wait(Send, Msg)
@@ -40,15 +40,15 @@ send_and_wait(Send, Msg) ->
 dump_data(Pid) ->
     receive
         {recv, Pid, <<>>} -> dump_data(Pid);
-        {recv, Pid, Data} -> 
-            io:format("~p~n", [Data]), 
+        {recv, Pid, Data} ->
+            io:format("~p~n", [Data]),
             dump_data(Pid)
     after
         1000 -> ok
     end.
 
 socks5_server() ->
-    Server = mimicsocks_tcp_listener:start_link([{127,0,0,1}, 8888, 
+    Server = mimicsocks_tcp_listener:start_link([{127,0,0,1}, 8888,
                                         mimicsocks_remote_socks, [undefined]]),
     Server.
 

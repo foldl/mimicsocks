@@ -1,5 +1,5 @@
 %doc        en/decrypt module
-%author     foldl@outlook.com
+%author     foldl
 -module(mimicsocks_crypt).
 
 -export([start_link/2, stop/1, recv/2, hmac_sha/3, init_aes_ctr_enc/2, init_aes_ctr_dec/2]).
